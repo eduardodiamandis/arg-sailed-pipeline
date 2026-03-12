@@ -1,0 +1,25 @@
+# Ambiente
+.env
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# Excel gerados
+*.xlsx
+*.xls
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
