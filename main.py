@@ -10,6 +10,7 @@ Fluxo:
   4. Merge inteligente (remove períodos sobrepostos, insere novos)
   5. Salva localmente, no OneDrive e no SQL Server
   6. Cria Pivot Tables no arquivo OneDrive
+  7. Envia resumo do log por e-mail
 """
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ import time
 
 import pandas as pd
 
-# Garante que src/ está no path quando executado da raiz
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent / "src"))
 
 from config import (
@@ -36,7 +36,6 @@ from config import (
     URL_SAILED,
 )
 from database import (
-    criar_pivot_tables,
     ler_arquivo_novo,
     merge_com_banco,
     salvar_local,
@@ -44,11 +43,16 @@ from database import (
     salvar_sql_server,
 )
 from downloader import download_file
+from email_report import send_log_report
 from latest_file import get_latest_file
-from logger_config import logger
+from logger_config import logger, _DEFAULT_LOG_FILE
+from pivot_tables import criar_pivot_tables   # módulo separado com timeout
 
 
 def main() -> None:
+    start_time = time.time()
+    pipeline_ok = True
+
     logger.info("=" * 60)
     logger.info("INÍCIO DO PIPELINE — Arg Sailed Database")
     logger.info("=" * 60)
@@ -68,9 +72,12 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Falha no download do Sailed: {e}")
         logger.error("Pipeline interrompido — não é possível continuar sem o arquivo.")
+        pipeline_ok = False
+        send_log_report(_DEFAULT_LOG_FILE, success=False,
+                        duration_seconds=time.time() - start_time)
         sys.exit(1)
 
-    time.sleep(3)  # Pequena pausa entre downloads
+    time.sleep(3)
 
     try:
         download_file(
@@ -80,7 +87,6 @@ def main() -> None:
             timeout=TIMEOUT_LINEUP,
         )
     except Exception as e:
-        # Line-Up não é crítico para o banco — apenas loga e continua
         logger.warning(f"Falha no download do Line-Up (não crítico): {e}")
 
     # ------------------------------------------------------------------
@@ -108,7 +114,6 @@ def main() -> None:
 
     db_atualizado = merge_com_banco(df_novo, db)
 
-    # Log das últimas 15 datas para conferência
     ultimas = (
         db_atualizado
         .sort_values("Date", ascending=False)
@@ -127,30 +132,52 @@ def main() -> None:
         salvar_local(db_atualizado, PATH_DATABASE_OUTPUT)
     except Exception as e:
         logger.error(f"Falha ao salvar arquivo local: {e}")
+        pipeline_ok = False
 
     try:
         salvar_onedrive(db_atualizado, PATH_ONEDRIVE)
     except Exception as e:
         logger.error(f"Falha ao salvar no OneDrive: {e}")
+        pipeline_ok = False
 
     try:
         salvar_sql_server(db_atualizado, SQL_SERVER, SQL_DATABASE, SQL_TABLE)
     except Exception as e:
         logger.error(f"Falha ao salvar no SQL Server: {e}")
+        pipeline_ok = False
 
     # ------------------------------------------------------------------
-    # 6. Pivot Tables
+    # 6. Pivot Tables (com timeout — não trava o Task Scheduler)
     # ------------------------------------------------------------------
     logger.info("--- ETAPA 6: Pivot Tables ---")
 
     try:
         criar_pivot_tables(PATH_ONEDRIVE)
+    except TimeoutError as e:
+        logger.error(f"Timeout nas Pivot Tables: {e}")
+        pipeline_ok = False
     except Exception as e:
         logger.error(f"Falha ao criar Pivot Tables: {e}")
+        pipeline_ok = False
 
-    logger.info("=" * 60)
-    logger.info("PIPELINE FINALIZADO COM SUCESSO")
-    logger.info("=" * 60)
+    # ------------------------------------------------------------------
+    # 7. E-mail com resumo do log
+    # ------------------------------------------------------------------
+    duration = time.time() - start_time
+    logger.info("--- ETAPA 7: Envio de e-mail ---")
+
+    if pipeline_ok:
+        logger.info("=" * 60)
+        logger.info("PIPELINE FINALIZADO COM SUCESSO")
+        logger.info(f"Duração total: {duration:.1f}s")
+        logger.info("=" * 60)
+    else:
+        logger.warning("=" * 60)
+        logger.warning("PIPELINE FINALIZADO COM ERROS — verifique o log")
+        logger.warning(f"Duração total: {duration:.1f}s")
+        logger.warning("=" * 60)
+
+    send_log_report(_DEFAULT_LOG_FILE, success=pipeline_ok, duration_seconds=duration)
 
 
 if __name__ == "__main__":

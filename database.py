@@ -221,6 +221,7 @@ def criar_pivot_tables(path_excel: Path) -> None:
       - Year     = ano da pivot (2025 ou 2026)
       - Month    = mês atual (para 2026) / dezembro (para 2025)
     """
+
     import win32com.client as win32
 
     mes_atual = str(datetime.datetime.now().month)

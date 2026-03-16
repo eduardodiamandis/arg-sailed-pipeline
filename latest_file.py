@@ -41,3 +41,12 @@ def get_latest_file(directory: Path) -> Path:
     logger.info(f"Arquivo mais recente encontrado: {latest.name}")
 
     return latest
+
+if main := __name__ == "__main__":
+    # Teste rápido
+    test_dir = Path(r"C:\Users\server\Desktop\Argentina\Sailed")
+    try:
+        latest_file = get_latest_file(test_dir)
+        print(f"Arquivo mais recente: {latest_file}")
+    except Exception as e:
+        print(f"Erro: {e}")
