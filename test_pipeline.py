@@ -33,7 +33,7 @@ def _mock_module(name: str) -> types.ModuleType:
     return mod
 
 
-# Garante que pyodbc e win32com não precisam estar instalados para os testes
+# Garante que módulos externos não precisam estar instalados para os testes
 if "pyodbc" not in sys.modules:
     _mock_module("pyodbc")
 if "win32com" not in sys.modules:
@@ -41,6 +41,20 @@ if "win32com" not in sys.modules:
     _mock_module("win32com.client")
 if "pythoncom" not in sys.modules:
     _mock_module("pythoncom")
+
+# Selenium — mockado para que TestDownloadFile funcione sem Chrome instalado
+if "selenium" not in sys.modules:
+    sel = _mock_module("selenium")
+    sel_wd = _mock_module("selenium.webdriver")
+    sel_wd.Chrome = MagicMock
+    sel_chrome_opts = _mock_module("selenium.webdriver.chrome.options")
+    sel_chrome_opts.Options = MagicMock
+    sel_chrome_svc = _mock_module("selenium.webdriver.chrome.service")
+    sel_chrome_svc.Service = MagicMock
+if "webdriver_manager" not in sys.modules:
+    wdm = _mock_module("webdriver_manager")
+    wdm_chrome = _mock_module("webdriver_manager.chrome")
+    wdm_chrome.ChromeDriverManager = MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -361,38 +375,113 @@ class TestBuildOutputName(unittest.TestCase):
 
 class TestDownloadFile(unittest.TestCase):
 
-    def _make_mock_response(self, cd_header: str, content: bytes = b"data") -> Mock:
-        resp = Mock()
-        resp.headers = {"Content-Disposition": cd_header}
-        resp.raise_for_status = Mock()
-        resp.iter_content = Mock(return_value=[content])
-        return resp
+    def _make_fake_downloaded_file(self, tmpdir: str, name: str) -> Path:
+        """Cria um .xlsx falso com magic bytes PK válidos na pasta temporária."""
+        p = Path(tmpdir) / name
+        p.write_bytes(b"PK\x03\x04" + b"\x00" * 5000)
+        return p
+
+    def _make_mock_driver(self, downloaded_file: Path):
+        """Retorna um mock de webdriver que não faz nada (get() é no-op)."""
+        driver = MagicMock()
+        driver.get = Mock()
+        driver.quit = Mock()
+        return driver
 
     def test_salva_arquivo_com_nome_enriquecido(self):
-        cd = 'attachment; filename="Sailed Vessels_2026-03-01.xlsx"'
-        mock_resp = self._make_mock_response(cd)
+        import tempfile
 
-        with patch("downloader.requests.get", return_value=mock_resp), \
-             patch("downloader.Path.mkdir"), \
-             patch("builtins.open", unittest.mock.mock_open()) as mock_open, \
-             patch("downloader.Path.stat") as mock_stat:
-            mock_stat.return_value.st_size = 10240
-            result = download_file(
-                url="http://fake.url/file",
-                file_name="vessels_sailed_update.xlsx",
-                destination_path=Path("/tmp/backup"),
+        with tempfile.TemporaryDirectory() as dl_tmp, \
+             tempfile.TemporaryDirectory() as dest_tmp:
+
+            # Simula o arquivo que o Chrome teria baixado
+            downloaded = self._make_fake_downloaded_file(
+                dl_tmp, "Sailed Vessels_2026-03-01.xlsx"
             )
 
+            mock_driver = self._make_mock_driver(downloaded)
+
+            # Faz tempfile.mkdtemp retornar nossa pasta controlada
+            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("selenium.webdriver.Chrome", return_value=mock_driver), \
+                 patch("selenium.webdriver.chrome.service.Service"), \
+                 patch("webdriver_manager.chrome.ChromeDriverManager"):
+                result = download_file(
+                    url="http://fake.url/file",
+                    file_name="vessels_sailed_update.xlsx",
+                    destination_path=Path(dest_tmp),
+                    timeout=5,
+                )
+
         self.assertIn("Sailed Vessels_2026-03-01", str(result))
+        self.assertTrue(result.exists())
 
-    def test_levanta_erro_em_http_error(self):
-        mock_resp = Mock()
-        mock_resp.raise_for_status = Mock(side_effect=Exception("404 Not Found"))
+    def test_levanta_erro_quando_download_nao_aparece(self):
+        """Sem arquivos na pasta temp → TimeoutError após timeout curto."""
+        import tempfile
 
-        with patch("downloader.requests.get", return_value=mock_resp), \
-             patch("downloader.Path.mkdir"):
-            with self.assertRaises(Exception):
-                download_file("http://bad.url", "file.xlsx", Path("/tmp"))
+        with tempfile.TemporaryDirectory() as dl_tmp, \
+             tempfile.TemporaryDirectory() as dest_tmp:
+
+            mock_driver = MagicMock()
+            mock_driver.get = Mock()
+            mock_driver.quit = Mock()
+
+            # Pasta vazia — _wait_for_download vai esgotar o timeout
+            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("selenium.webdriver.Chrome", return_value=mock_driver), \
+                 patch("selenium.webdriver.chrome.service.Service"), \
+                 patch("webdriver_manager.chrome.ChromeDriverManager"), \
+                 patch("downloader.time.sleep"):  # acelera o polling
+                with self.assertRaises(TimeoutError):
+                    download_file(
+                        url="http://fake.url/file",
+                        file_name="file.xlsx",
+                        destination_path=Path(dest_tmp),
+                        timeout=0,  # timeout imediato
+                    )
+
+
+class TestValidateExcelFile(unittest.TestCase):
+
+    def test_arquivo_valido_nao_levanta(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            # Escreve assinatura ZIP válida + padding para passar o tamanho mínimo
+            f.write(b"PK" + b"\x00" * 5000)
+            tmp = Path(f.name)
+        try:
+            from downloader import _validate_excel_file
+            _validate_excel_file(tmp)  # não deve levantar
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def test_arquivo_html_levanta_valor_error(self):
+        import tempfile
+        from downloader import _validate_excel_file
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            # Simula página HTML retornada em vez do Excel
+            f.write(b"<html><body>Redirecting...</body></html>" * 200)
+            tmp = Path(f.name)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                _validate_excel_file(tmp)
+            self.assertIn("ZIP", str(ctx.exception))
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def test_arquivo_muito_pequeno_levanta_valor_error(self):
+        import tempfile
+        from downloader import _validate_excel_file
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            f.write(b"PK" + b"\x00" * 10)  # assinatura OK mas tamanho insuficiente
+            tmp = Path(f.name)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                _validate_excel_file(tmp)
+            self.assertIn("KB", str(ctx.exception))
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 # ===========================================================================
