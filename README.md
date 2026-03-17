@@ -1,85 +1,162 @@
-# Argentina Sailed — Pipeline de Atualização
+# Argentina Sailed — Data Pipeline
 
-Pipeline automatizado para baixar, tratar e persistir dados de embarques de grãos da Argentina.
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Status](https://img.shields.io/badge/status-active-success)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
+![License](https://img.shields.io/badge/license-private-lightgrey)
 
-## Estrutura
+Automated data pipeline for Argentina grain shipment tracking, responsible for downloading, processing, merging, and persisting shipment data across multiple storage layers.
 
-```
+---
+
+## Overview
+
+This pipeline ensures data consistency and idempotency when handling monthly shipment updates, even when partial or overlapping datasets are ingested.
+
+Key features:
+- Incremental and safe monthly merge logic
+- Multi-destination persistence (Excel, OneDrive, SQL Server)
+- Automated logging with rotation
+- Fully testable merge layer
+
+---
+
+## Project Structure
 argentina_sailed/
-├── main.py                  # Orquestrador — ponto de entrada
+├── main.py # Orchestrator — entry point
 ├── src/
-│   ├── config.py            # Carrega variáveis do .env
-│   ├── logger_config.py     # Logger centralizado
-│   ├── downloader.py        # Download dos arquivos via HTTP
-│   ├── latest_file.py       # Encontra o arquivo mais recente no backup
-│   └── database.py          # Transformação, merge e persistência
+│ ├── config.py # Environment configuration (.env)
+│ ├── logger_config.py # Logging setup
+│ ├── downloader.py # HTTP data downloader
+│ ├── latest_file.py # Latest backup file resolver
+│ └── database.py # Core logic (transform + merge + persist)
 ├── tests/
-│   └── test_database.py     # Testes unitários da lógica de merge
-├── .env.example             # Template de configuração (commitar)
-├── .env                     # Configuração real (NÃO commitar)
+│ └── test_database.py # Unit tests (merge logic)
+├── .env.example # Environment template
+├── .env # Local config (ignored)
 ├── .gitignore
 └── requirements.txt
-```
 
-## Fluxo do Pipeline
 
-```
-Download Sailed ──┐
-                  ├──► Arquivo mais recente
-Download Line-Up  │
-                  │
-Banco existente ──┼──► merge_com_banco() ──► Salvar local
-                                         ──► Salvar OneDrive
-                                         ──► SQL Server
-                                         ──► Pivot Tables (win32com)
-```
+---
 
-## Lógica de Merge
+## Pipeline Flow
 
-O arquivo novo pode conter **um ou mais meses** (ex: jan + fev + mar parcial de 2026).
+    ┌───────────────┐
+    │ Sailed Data   │
+    └──────┬────────┘
+           │
+    ┌──────▼────────┐
+    │ Line-Up Data  │
+    └──────┬────────┘
+           │
+    ┌──────▼──────────────┐
+    │ Latest File Resolver│
+    └──────┬──────────────┘
+           │
+    ┌──────▼──────────────┐
+    │ Existing Database   │
+    └──────┬──────────────┘
+           │
+    ┌──────▼──────────────┐
+    │ merge_com_banco()   │
+    └──────┬──────────────┘
+           │
 
-A função `merge_com_banco` identifica **todos os períodos mês/ano** presentes no arquivo novo e os remove do banco antes de inserir — garantindo que:
+┌───────────┼───────────────┐
+▼ ▼ ▼
+Local Excel OneDrive SQL Server
++ Pivot Tables
 
-- Não há duplicatas mesmo que o pipeline rode múltiplas vezes no mesmo dia
-- Meses históricos (ex: 2025 completo) nunca são apagados
-- Casos especiais como inserção manual de múltiplos meses funcionam corretamente
 
-## Configuração
+---
+
+## Merge Strategy
+
+The pipeline is designed to handle partial and multi-month updates safely.
+
+### How it works
+
+- The incoming dataset may contain multiple months  
+  (e.g., Jan + Feb + partial Mar 2026)
+
+- The function `merge_com_banco()`:
+  1. Detects all `(month, year)` combinations in the new data
+  2. Removes matching periods from the existing database
+  3. Inserts the new records
+
+### Guarantees
+
+- No duplicated data (idempotent execution)
+- Historical data is preserved
+- Supports manual multi-month corrections
+- Safe to run multiple times per day
+
+---
+
+## Setup
 
 ```bash
-# 1. Clone o repositório
-git clone <url>
+# Clone repository
+git clone <your-repo-url>
 cd argentina_sailed
 
-# 2. Instale as dependências
+# Install dependencies
 pip install -r requirements.txt
 
-# 3. Configure o ambiente
-copy .env.example .env
-# Edite o .env com seus caminhos e credenciais
+# Configure environment
+cp .env.example .env
+# Fill in credentials and paths
 
-# 4. Execute
+# Run pipeline
 python main.py
-```
-
-## Testes
-
-```bash
+Tests
 pytest tests/ -v
-```
 
-## Logs
+Focus:
 
-Os logs são gravados em:
-```
+Merge correctness
+
+Edge cases (partial months, overlaps, reprocessing)
+
+Outputs
+Destination	Description
+Local Excel	Arg_sailed_database_AT.xlsx (sheet data_base)
+OneDrive	Full dataset + yearly sheets + pivot tables
+SQL Server	[dbo].[Arg_Sailed] fully updated
+Logging
+
+Path:
+
 C:\Users\server\Desktop\Argentina\logs\argentina_updater.log
-```
-Rotação automática: 5 MB por arquivo, 3 backups mantidos.
 
-## Saídas geradas
+Rotation:
 
-| Arquivo | Conteúdo |
-|---|---|
-| `Arg_sailed_database_AT.xlsx` | Banco local atualizado (sheet `data_base`) |
-| `Arg_sailed_databease.xlsx` (OneDrive) | Banco + sheets 2025, 2026, Pivot_2025, Pivot_2026 |
-| SQL Server `[dbo].[Arg_Sailed]` | Banco completo atualizado |
+5 MB per file
+
+3 backup files retained
+
+Environment Variables
+
+Configured via .env file:
+
+Example:
+
+DB_CONNECTION_STRING=...
+ONEDRIVE_PATH=...
+DOWNLOAD_URL=...
+Future Improvements
+
+Docker containerization
+
+CI/CD pipeline (GitHub Actions)
+
+Data validation layer (schema enforcement)
+
+Monitoring and alerting (Slack / Email)
+
+Cloud migration (AWS / Azure)
+
+Author
+
+Eduardo Diamandis
