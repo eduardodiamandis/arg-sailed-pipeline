@@ -46,11 +46,16 @@ if "pythoncom" not in sys.modules:
 if "selenium" not in sys.modules:
     sel = _mock_module("selenium")
     sel_wd = _mock_module("selenium.webdriver")
-    sel_wd.Chrome = MagicMock
+    sel_wd.Chrome = MagicMock()
+    # Submódulo chrome precisa existir como atributo E como módulo
+    sel_chrome = _mock_module("selenium.webdriver.chrome")
+    sel_wd.chrome = sel_chrome
     sel_chrome_opts = _mock_module("selenium.webdriver.chrome.options")
     sel_chrome_opts.Options = MagicMock
+    sel_chrome.options = sel_chrome_opts
     sel_chrome_svc = _mock_module("selenium.webdriver.chrome.service")
     sel_chrome_svc.Service = MagicMock
+    sel_chrome.service = sel_chrome_svc
 if "webdriver_manager" not in sys.modules:
     wdm = _mock_module("webdriver_manager")
     wdm_chrome = _mock_module("webdriver_manager.chrome")
@@ -403,9 +408,9 @@ class TestDownloadFile(unittest.TestCase):
 
             # Faz tempfile.mkdtemp retornar nossa pasta controlada
             with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("selenium.webdriver.Chrome", return_value=mock_driver), \
-                 patch("selenium.webdriver.chrome.service.Service"), \
-                 patch("webdriver_manager.chrome.ChromeDriverManager"):
+                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("downloader.Service"), \
+                 patch("downloader.ChromeDriverManager"):
                 result = download_file(
                     url="http://fake.url/file",
                     file_name="vessels_sailed_update.xlsx",
@@ -429,9 +434,9 @@ class TestDownloadFile(unittest.TestCase):
 
             # Pasta vazia — _wait_for_download vai esgotar o timeout
             with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("selenium.webdriver.Chrome", return_value=mock_driver), \
-                 patch("selenium.webdriver.chrome.service.Service"), \
-                 patch("webdriver_manager.chrome.ChromeDriverManager"), \
+                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("downloader.Service"), \
+                 patch("downloader.ChromeDriverManager"), \
                  patch("downloader.time.sleep"):  # acelera o polling
                 with self.assertRaises(TimeoutError):
                     download_file(

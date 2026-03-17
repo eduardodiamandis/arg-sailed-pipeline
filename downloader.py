@@ -242,15 +242,23 @@ def download_file(
     _validate_excel_file(output_path)
     logger.info("  Validação OK: arquivo é um Excel/ZIP válido.")
 
-    # Tenta enriquecer o nome com a data máxima extraída do conteúdo do Excel
-    # (usado quando o servidor não envia Content-Disposition com data)
+    # Enriquece o nome com data quando o servidor não a fornece no header.
+    # Estratégia:
+    #   1. Tenta extrair a data máxima da coluna 'Date' do próprio Excel (ex: Sailed)
+    #   2. Se não encontrar (ex: Line-Up tem estrutura diferente), usa a data de hoje
     if not _DATE_RE.search(final_name):
-        max_date = _extract_max_date_from_excel(output_path)
-        if max_date:
-            dated_name = f"{base_stem}_{max_date}.xlsx"
-            dated_path = destination_path / dated_name
-            output_path.rename(dated_path)
-            output_path = dated_path
-            logger.info(f"  Arquivo renomeado com data extraída: {dated_name}")
+        date_str = _extract_max_date_from_excel(output_path)
+        if date_str:
+            logger.info(f"  Data extraída do conteúdo do arquivo: {date_str}")
+        else:
+            from datetime import date as _date
+            date_str = _date.today().strftime("%Y-%m-%d")
+            logger.info(f"  Usando data de processamento: {date_str}")
+
+        dated_name = f"{base_stem}_{date_str}.xlsx"
+        dated_path = destination_path / dated_name
+        output_path.replace(dated_path)
+        output_path = dated_path
+        logger.info(f"  Arquivo renomeado: {dated_name}")
 
     return output_path

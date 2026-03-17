@@ -75,7 +75,13 @@ def _criar_pivot_tables_interno(path_excel: Path, resultado: dict) -> None:
 
         _build_pivot("Pivot_2026", "Pivot_2026", year="2026", month_filter=mes_atual)
         _build_pivot("Pivot_2025", "Pivot_2025", year="2025", month_filter="12")
+        
+        if wb.ReadOnly:
+            raise RuntimeError(
+                f"Arquivo aberto em modo somente leitura — feche o Excel antes de rodar o pipeline: {path_str}"
+                )
 
+        
         wb.Save()
         wb.Close(False)
         logger.info("Pivot Tables salvas com sucesso.")

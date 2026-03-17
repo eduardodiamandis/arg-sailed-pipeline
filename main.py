@@ -166,7 +166,7 @@ def main() -> None:
     duration = time.time() - start_time
     logger.info("--- ETAPA 7: Envio de e-mail ---")
 
-    if pipeline_ok:
+    if  pipeline_ok:
         logger.info("=" * 60)
         logger.info("PIPELINE FINALIZADO COM SUCESSO")
         logger.info(f"Duração total: {duration:.1f}s")
@@ -176,8 +176,9 @@ def main() -> None:
         logger.warning("PIPELINE FINALIZADO COM ERROS — verifique o log")
         logger.warning(f"Duração total: {duration:.1f}s")
         logger.warning("=" * 60)
+        send_log_report(_DEFAULT_LOG_FILE, success=pipeline_ok, duration_seconds=duration)
 
-    send_log_report(_DEFAULT_LOG_FILE, success=pipeline_ok, duration_seconds=duration)
+    
 
 
 if __name__ == "__main__":
