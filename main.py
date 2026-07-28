@@ -24,12 +24,14 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent / "src"))
 from config import (
     DIR_LINEUP_BACKUP,
     DIR_SAILED_BACKUP,
+    LINEUP_FORCE_SNAPSHOT,
     PATH_DATABASE,
     PATH_DATABASE_OUTPUT,
     PATH_ONEDRIVE,
     SQL_DATABASE,
     SQL_SERVER,
     SQL_TABLE,
+    SQL_TABLE_LINEUP,
     TIMEOUT_LINEUP,
     TIMEOUT_SAILED,
     URL_LINEUP,
@@ -46,6 +48,7 @@ from database import (
 from downloader import download_file
 from email_report import send_log_report
 from latest_file import get_latest_file
+from lineup import ler_arquivo_lineup, salvar_lineup_sql
 from logger_config import logger, _DEFAULT_LOG_FILE
 from pivot_tables import criar_pivot_tables   # módulo separado com timeout
 from validation import detectar_gaps, validar_continuidade, validar_corte_rodape
@@ -90,6 +93,30 @@ def main() -> None:
         )
     except Exception as e:
         logger.warning(f"Falha no download do Line-Up (não crítico): {e}")
+
+    # ------------------------------------------------------------------
+    # 1b. Snapshot diario do Line-Up
+    # ------------------------------------------------------------------
+    # Arg_Lineup e append-only: acumula um snapshot por dia e nunca apaga
+    # historico. Nao-critico — o Sailed e o produto principal e nao depende
+    # disto. Navios com Status=SAILED sao filtrados dentro de
+    # ler_arquivo_lineup para nao duplicar o que ja esta em Arg_Sailed.
+    logger.info("--- ETAPA 1b: Snapshot do Line-Up ---")
+
+    try:
+        latest_lineup = get_latest_file(DIR_LINEUP_BACKUP)
+        df_lineup = ler_arquivo_lineup(latest_lineup)
+        salvar_lineup_sql(
+            df_lineup,
+            SQL_SERVER,
+            SQL_DATABASE,
+            SQL_TABLE_LINEUP,
+            force=LINEUP_FORCE_SNAPSHOT,
+        )
+    except FileNotFoundError:
+        logger.warning("Nenhum arquivo de Line-Up encontrado — etapa ignorada.")
+    except Exception as e:
+        logger.error(f"Falha no processamento do Line-Up (nao-critico): {e}")
 
     # ------------------------------------------------------------------
     # 2. Leitura do arquivo mais recente

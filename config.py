@@ -45,6 +45,16 @@ PATH_ONEDRIVE: Path = DIR_ONEDRIVE / FILENAME_ONEDRIVE
 SQL_SERVER: str = _require("SQL_SERVER")
 SQL_DATABASE: str = _require("SQL_DATABASE")
 SQL_TABLE: str = _require("SQL_TABLE")
+SQL_TABLE_LINEUP: str = _require("SQL_TABLE_LINEUP")
+
+# --- Lineup ---
+# Arg_Lineup e append-only entre dias. Dentro do MESMO dia, force=True apaga o
+# snapshot anterior antes de inserir, para que uma reexecucao substitua os dados
+# em vez de manter os da primeira rodada. Com False, reexecucoes sao ignoradas.
+# Nao afeta o historico de outros dias em nenhum dos casos. Ver ESTRUTURA.md 9.2.
+LINEUP_FORCE_SNAPSHOT: bool = os.getenv("LINEUP_FORCE_SNAPSHOT", "true").strip().lower() in (
+    "1", "true", "yes", "sim"
+)
 
 # --- Timeouts ---
 TIMEOUT_SAILED: int = int(os.getenv("TIMEOUT_SAILED", "40"))
