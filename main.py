@@ -41,6 +41,7 @@ from database import (
     salvar_local,
     salvar_onedrive,
     salvar_sql_server,
+    _forcar_sync_onedrive,
 )
 from downloader import download_file
 from email_report import send_log_report
@@ -123,15 +124,41 @@ def main() -> None:
     datas_str = ultimas["Date"].dt.strftime("%d/%m/%Y").to_string(index=False)
     logger.info(f"Últimas 15 datas no banco atualizado:\n{datas_str}")
 
+    # Estatísticas para o e-mail de sucesso
+    periodos_novos = df_novo["Date"].dt.to_period("M").unique()
+    rows_added     = len(db_atualizado) - (len(db) - db["Date"].dt.to_period("M").isin(periodos_novos).sum())
+    db_stats = {
+        "total_rows": len(db_atualizado),
+        "last_date":  db_atualizado["Date"].max().strftime("%d/%m/%Y"),
+        "rows_added": int(rows_added),
+        "periods":    ", ".join(sorted(periodos_novos.astype(str))),
+    }
+
     # ------------------------------------------------------------------
     # 5. Persistência
     # ------------------------------------------------------------------
     logger.info("--- ETAPA 5: Salvamento ---")
 
+    ts = time.strftime("%Y-%m-%d_%H%M")
+    path_local = PATH_DATABASE_OUTPUT.with_stem(PATH_DATABASE_OUTPUT.stem + f"_{ts}")
     try:
-        salvar_local(db_atualizado, PATH_DATABASE_OUTPUT)
+        salvar_local(db_atualizado, path_local)
     except Exception as e:
         logger.error(f"Falha ao salvar arquivo local: {e}")
+        pipeline_ok = False
+
+    # Atualiza a base para que a próxima execução parta do estado atual.
+    # Sem isto a base congela: enquanto o NABSA entrega o mês corrente o merge
+    # recompõe o mês, mas na virada os dias do fim do mês anterior caem num vão
+    # que ninguém preenche (foi o que apagou 26–30/06/2026 do Power BI por 26
+    # dias). Depende da trava de segurança de merge_com_banco — reescrever a base
+    # com um merge que substitui períodos cegamente corromperia o histórico.
+    # Ver ESTRUTURA.md, decisão 9.1.
+    try:
+        salvar_local(db_atualizado, PATH_DATABASE)
+        logger.info(f"Base principal atualizada: {PATH_DATABASE}")
+    except Exception as e:
+        logger.error(f"Falha ao atualizar a base principal: {e}")
         pipeline_ok = False
 
     try:
@@ -159,6 +186,9 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Falha ao criar Pivot Tables: {e}")
         pipeline_ok = False
+    finally:
+        # Notifica o OneDrive após o Excel soltar o arquivo
+        _forcar_sync_onedrive(PATH_ONEDRIVE)
 
     # ------------------------------------------------------------------
     # 7. E-mail com resumo do log
@@ -166,7 +196,7 @@ def main() -> None:
     duration = time.time() - start_time
     logger.info("--- ETAPA 7: Envio de e-mail ---")
 
-    if  pipeline_ok:
+    if pipeline_ok:
         logger.info("=" * 60)
         logger.info("PIPELINE FINALIZADO COM SUCESSO")
         logger.info(f"Duração total: {duration:.1f}s")
@@ -176,7 +206,13 @@ def main() -> None:
         logger.warning("PIPELINE FINALIZADO COM ERROS — verifique o log")
         logger.warning(f"Duração total: {duration:.1f}s")
         logger.warning("=" * 60)
-        send_log_report(_DEFAULT_LOG_FILE, success=pipeline_ok, duration_seconds=duration)
+
+    send_log_report(
+        _DEFAULT_LOG_FILE,
+        success=pipeline_ok,
+        duration_seconds=duration,
+        db_stats=db_stats,
+    )
 
     
 

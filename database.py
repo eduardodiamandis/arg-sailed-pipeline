@@ -8,7 +8,6 @@ Toda a lógica de transformação de dados e persistência:
 """
 from __future__ import annotations
 
-import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -63,38 +62,76 @@ def ler_arquivo_novo(path: Path) -> pd.DataFrame:
 
 def merge_com_banco(df_novo: pd.DataFrame, db: pd.DataFrame) -> pd.DataFrame:
     """
-    Atualiza o banco removendo os períodos (mês/ano) presentes no arquivo novo
-    e inserindo os dados novos no lugar.
+    Atualiza o banco de forma inteligente, período a período.
 
-    Lógica:
-    -------
-    O arquivo novo pode conter um ou mais meses (ex: jan + fev + mar parcial).
-    Deletamos do banco TODOS esses períodos antes de inserir — evitando
-    duplicatas independentemente de quantas vezes o processo rodar.
+    Para CADA período (mês/ano) presente no arquivo novo, compara a quantidade
+    de registros com o que já existe no banco:
+      - Se o arquivo novo tem MAIS ou IGUAL → substitui (dados mais atualizados)
+      - Se o arquivo novo tem MENOS → mantém o banco e loga um alerta
 
-    Exemplo:
-        Banco tem: 2025 completo + jan/2026 + fev/2026
-        Arquivo novo tem: jan/2026 + fev/2026 + mar/2026 (parcial)
-        → Deleta jan, fev e mar de 2026 do banco
-        → Insere tudo do arquivo novo
-        → Resultado: 2025 completo + jan/2026 + fev/2026 + mar/2026 (atualizado)
+    Isso evita perda de dados quando o pipeline roda com um arquivo parcial
+    (ex: arquivo do dia 29 substituindo um março completo que já estava no banco).
+
+    Trava de segurança obrigatória desde que a base voltou a ser reescrita a cada
+    execução: sem ela, um arquivo truncado do NABSA corromperia o mês inteiro de
+    forma permanente. Ver ESTRUTURA.md, decisão 9.1.
     """
     df_novo["Date"] = pd.to_datetime(df_novo["Date"])
     db["Date"] = pd.to_datetime(db["Date"])
 
-    # Identifica todos os períodos (mês/ano) presentes no arquivo novo
     periodos_novos = df_novo["Date"].dt.to_period("M").unique()
     logger.info(f"Períodos do arquivo novo: {sorted(periodos_novos.astype(str))}")
 
-    # Remove esses períodos do banco
-    mascara_remover = db["Date"].dt.to_period("M").isin(periodos_novos)
-    linhas_removidas = mascara_remover.sum()
-    db_limpo = db[~mascara_remover].copy()
+    periodos_aceitos = []
+    periodos_rejeitados = []
 
-    logger.info(f"Linhas removidas do banco (períodos sobrepostos): {linhas_removidas}")
+    for periodo in sorted(periodos_novos):
+        mes, ano = periodo.month, periodo.year
 
-    # Concatena banco limpo com dados novos
-    db_atualizado = pd.concat([db_limpo, df_novo], ignore_index=True)
+        mask_novo = (df_novo["Date"].dt.month == mes) & (df_novo["Date"].dt.year == ano)
+        linhas_novo = mask_novo.sum()
+        dias_novo = df_novo.loc[mask_novo, "Date"].dt.day.nunique()
+
+        mask_db = (db["Date"].dt.month == mes) & (db["Date"].dt.year == ano)
+        linhas_db = mask_db.sum()
+        dias_db = db.loc[mask_db, "Date"].dt.day.nunique()
+
+        if linhas_db == 0 or linhas_novo >= linhas_db:
+            periodos_aceitos.append(periodo)
+            logger.info(
+                f"  {periodo}: ACEITO — novo={linhas_novo} linhas/{dias_novo} dias "
+                f"vs banco={linhas_db} linhas/{dias_db} dias"
+            )
+        else:
+            periodos_rejeitados.append(periodo)
+            logger.warning(
+                f"  ⚠️ {periodo}: REJEITADO — novo={linhas_novo} linhas/{dias_novo} dias "
+                f"vs banco={linhas_db} linhas/{dias_db} dias "
+                f"→ mantendo dados do banco para não perder informação"
+            )
+
+    if periodos_rejeitados:
+        logger.warning(
+            f"⚠️ {len(periodos_rejeitados)} período(s) rejeitado(s) por ter menos dados: "
+            f"{[str(p) for p in periodos_rejeitados]}"
+        )
+
+    # Remove do banco apenas os períodos aceitos
+    if periodos_aceitos:
+        mascara_remover = db["Date"].dt.to_period("M").isin(periodos_aceitos)
+        linhas_removidas = mascara_remover.sum()
+        db_limpo = db[~mascara_remover].copy()
+        logger.info(f"Linhas removidas do banco (períodos aceitos): {linhas_removidas}")
+
+        mask_aceitos = df_novo["Date"].dt.to_period("M").isin(periodos_aceitos)
+        df_inserir = df_novo[mask_aceitos].copy()
+        db_atualizado = pd.concat([db_limpo, df_inserir], ignore_index=True)
+    else:
+        # Nada a inserir. Não concatenar: um DataFrame vazio tem colunas de dtype
+        # object e o concat converteria 'Date' para object, quebrando o .dt abaixo.
+        db_atualizado = db.copy()
+        logger.warning("Nenhum período aceito — banco mantido sem alterações.")
+
     db_atualizado = db_atualizado.sort_values("Date").reset_index(drop=True)
 
     # Garante Month e Year consistentes
@@ -155,6 +192,34 @@ def salvar_onedrive(df: pd.DataFrame, path: Path) -> None:
         pivot_2026.to_excel(writer, sheet_name="Pivot_2026", index=False)
 
     logger.info(f"Arquivo OneDrive salvo com sheets extras: {path}")
+    _forcar_sync_onedrive(path)
+
+
+def _forcar_sync_onedrive(path: Path) -> None:
+    """Garante que o OneDrive processe o arquivo imediatamente após o salvamento."""
+    import os, subprocess, sys
+
+    # Atualiza o timestamp para o OneDrive detectar a mudança
+    os.utime(path, None)
+
+    if sys.platform != "win32":
+        return
+
+    onedrive_exe = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "OneDrive" / "OneDrive.exe"
+    if not onedrive_exe.exists():
+        logger.warning("OneDrive.exe não encontrado — sync automático indisponível.")
+        return
+
+    try:
+        # /start acorda o cliente se estiver pausado; não abre janela
+        subprocess.Popen(
+            [str(onedrive_exe), "/start"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info("OneDrive: cliente notificado para sincronizar.")
+    except Exception as e:
+        logger.warning(f"Não foi possível notificar o OneDrive: {e}")
 
 
 def salvar_sql_server(df: pd.DataFrame, server: str, database: str, table: str) -> None:
@@ -172,18 +237,16 @@ def salvar_sql_server(df: pd.DataFrame, server: str, database: str, table: str) 
     logger.info(f"Conectando ao SQL Server: {server}/{database}")
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
-    cursor.fast_executemany = True
 
     try:
         logger.info(f"Limpando tabela [dbo].[{table}]...")
         cursor.execute(f"DELETE FROM [dbo].[{table}]")
 
-        # Prepara tipos nativos (evita erros de tipo 'object' do pandas)
-        df_sql = df[COLUNAS].copy()
-        df_sql["Date"] = pd.to_datetime(df_sql["Date"]).dt.date
-        df_sql["Tons"] = pd.to_numeric(df_sql["Tons"], errors="coerce").fillna(0).astype(float)
+        df_sql = df.reindex(columns=COLUNAS).copy()
+        df_sql["Date"]  = pd.to_datetime(df_sql["Date"]).dt.date
+        df_sql["Tons"]  = pd.to_numeric(df_sql["Tons"],  errors="coerce").fillna(0).astype(float)
         df_sql["Month"] = pd.to_numeric(df_sql["Month"], errors="coerce").fillna(0).astype(int)
-        df_sql["Year"] = pd.to_numeric(df_sql["Year"], errors="coerce").fillna(0).astype(int)
+        df_sql["Year"]  = pd.to_numeric(df_sql["Year"],  errors="coerce").fillna(0).astype(int)
 
         valores = df_sql.values.tolist()
 
@@ -193,6 +256,7 @@ def salvar_sql_server(df: pd.DataFrame, server: str, database: str, table: str) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """
 
+        cursor.fast_executemany = True
         logger.info(f"Inserindo {len(valores)} linhas no SQL Server...")
         cursor.executemany(query, valores)
         conn.commit()
