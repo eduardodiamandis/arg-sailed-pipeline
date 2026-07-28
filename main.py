@@ -48,6 +48,7 @@ from email_report import send_log_report
 from latest_file import get_latest_file
 from logger_config import logger, _DEFAULT_LOG_FILE
 from pivot_tables import criar_pivot_tables   # módulo separado com timeout
+from validation import detectar_gaps, validar_continuidade, validar_corte_rodape
 
 
 def main() -> None:
@@ -98,6 +99,14 @@ def main() -> None:
     latest = get_latest_file(DIR_SAILED_BACKUP)
     df_novo = ler_arquivo_novo(latest)
 
+    # Alerta se o detector de rodapé pode ter cortado dados cedo demais.
+    # As ETAPAS 2-4 nao sao protegidas por try/except, e uma validacao que so
+    # informa nunca deve derrubar o pipeline — dai a guarda local.
+    try:
+        validar_corte_rodape(df_novo, path_original=str(latest))
+    except Exception as e:
+        logger.error(f"Falha na validacao de corte de rodape (ignorada): {e}")
+
     # ------------------------------------------------------------------
     # 3. Leitura do banco existente
     # ------------------------------------------------------------------
@@ -123,6 +132,28 @@ def main() -> None:
     )
     datas_str = ultimas["Date"].dt.strftime("%d/%m/%Y").to_string(index=False)
     logger.info(f"Últimas 15 datas no banco atualizado:\n{datas_str}")
+
+    # Continuidade entre o fim da base e o inicio do arquivo novo. E ESTA que
+    # detecta a classe de perda ocorrida em 26-30/06/2026: base parada em 25/06
+    # e arquivo trazendo so julho. O detectar_gaps abaixo NAO pega esse caso,
+    # porque so examina os periodos presentes no arquivo novo.
+    # Detecta dias que existiam no banco e sumiram apos o merge — na pratica,
+    # o caso em que a trava de seguranca rejeitou um periodo. Os gaps sao
+    # registrados como WARNING e o _extract_warnings do email_report os coleta
+    # do log, entao aparecem na secao "Avisos" do e-mail sem acoplamento extra.
+    #
+    # 'db' ainda e o banco PRE-merge: merge_com_banco converte a coluna Date
+    # in-place mas nao remove linhas.
+    try:
+        validar_continuidade(db, df_novo)
+        gaps = detectar_gaps(df_novo, db_atualizado)
+        if gaps:
+            logger.warning(
+                f"⚠️ {len(gaps)} periodo(s) com gaps — verifique o arquivo-fonte "
+                f"antes de confiar nos dados."
+            )
+    except Exception as e:
+        logger.error(f"Falha nas validacoes pos-merge (ignorada): {e}")
 
     # Estatísticas para o e-mail de sucesso
     periodos_novos = df_novo["Date"].dt.to_period("M").unique()
