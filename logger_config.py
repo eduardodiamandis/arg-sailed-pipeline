@@ -6,7 +6,7 @@ Logger centralizado do projeto. Todos os módulos importam `logger` daqui.
 from __future__ import annotations
 
 import logging
-from logging.handlers import RotatingFileHandler, SMTPHandler
+from logging.handlers import TimedRotatingFileHandler, SMTPHandler
 from pathlib import Path
 
 LOGGER_NAME = "argentina_logger"
@@ -35,14 +35,15 @@ def setup_logger(logfile: Path | None = None) -> logging.Logger:
     console_handler.setFormatter(fmt)
     log.addHandler(console_handler)
 
-    # Arquivo rotativo
+    # Arquivo rotativo — novo arquivo a cada dia, mantém 30 dias
     path = logfile or _DEFAULT_LOG_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = RotatingFileHandler(
-        path, maxBytes=5_000_000, backupCount=3, encoding="utf-8"
+    file_handler = TimedRotatingFileHandler(
+        path, when="midnight", interval=1, backupCount=30, encoding="utf-8"
     )
+    file_handler.suffix = "%Y-%m-%d"
     file_handler.setFormatter(fmt)
-    log.addHandler(file_handler)  # ← estava faltando
+    log.addHandler(file_handler)
 
     # E-mail — só dispara em ERROR ou CRITICAL
     smtp_handler = SMTPHandler(

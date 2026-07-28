@@ -4,4 +4,5 @@ requests>=2.31
 pyodbc>=5.0
 python-dotenv>=1.0
 pywin32>=306       # win32com para Pivot Tables (Windows only)
+flask>=3.0          # dashboard intranet
 pytest>=7.4        # testes
