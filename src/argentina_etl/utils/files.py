@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from logger_config import logger
+from argentina_etl.logging_setup import logger
 
 
 def get_latest_file(directory: Path) -> Path:

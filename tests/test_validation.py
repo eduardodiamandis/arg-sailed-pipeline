@@ -10,10 +10,15 @@ que nada reclamasse.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
 import pandas as pd
 import pytest
 
-from validation import detectar_gaps, validar_continuidade, validar_corte_rodape
+from argentina_etl.validation import detectar_gaps, validar_continuidade, validar_corte_rodape
 
 
 def _df(dates: list[str]) -> pd.DataFrame:

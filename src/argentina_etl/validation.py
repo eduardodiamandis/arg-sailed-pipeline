@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from logger_config import logger
+from argentina_etl.logging_setup import logger
 
 
 def detectar_gaps(

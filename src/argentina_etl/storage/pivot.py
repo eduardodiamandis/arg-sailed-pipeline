@@ -17,7 +17,7 @@ import datetime
 import threading
 from pathlib import Path
 
-from logger_config import logger
+from argentina_etl.logging_setup import logger
 
 # Tempo máximo (segundos) para toda a operação de Pivot Tables
 _PIVOT_TIMEOUT_SECONDS = 120

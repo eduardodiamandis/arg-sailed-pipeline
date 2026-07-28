@@ -11,8 +11,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Raiz do repositório (dois níveis acima de src/)
-_ROOT = Path(__file__).resolve().parent
+# Raiz do repositório: src/argentina_etl/config.py -> parents[2]
+#   parents[0] = src/argentina_etl
+#   parents[1] = src
+#   parents[2] = raiz, onde vive o .env
+_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(_ROOT / ".env")
 
 

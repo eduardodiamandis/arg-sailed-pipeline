@@ -27,7 +27,9 @@ from flask import Flask, abort, jsonify, render_template_string, request
 # Configuração
 # ---------------------------------------------------------------------------
 
-from config import PATH_DATABASE_OUTPUT  # reutiliza o .env já carregado
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from argentina_etl.config import PATH_DATABASE_OUTPUT  # reutiliza o .env já carregado
 
 ALLOWED_SUBNET = "192.168.16."   # só IPs que começam com isso
 MAIN_SCRIPT    = Path(__file__).parent / "main.py"

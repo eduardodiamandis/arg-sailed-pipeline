@@ -67,18 +67,18 @@ if "webdriver_manager" not in sys.modules:
 # (adicionamos src/ ao path se necessário)
 # ---------------------------------------------------------------------------
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from database import (
+from argentina_etl.pipelines.sailed import (
     _cortar_apos_duas_linhas_vazias,
     ler_arquivo_novo,
     merge_com_banco,
-    salvar_local,
-    salvar_onedrive,
-    salvar_sql_server,
 )
-from downloader import _build_output_name, _extract_server_filename, download_file
-from latest_file import get_latest_file
+from argentina_etl.storage.excel import salvar_local
+from argentina_etl.storage.onedrive import salvar_onedrive
+from argentina_etl.storage.sql_server import salvar_sql_server
+from argentina_etl.downloader import _build_output_name, _extract_server_filename, download_file
+from argentina_etl.utils.files import get_latest_file
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +151,8 @@ class TestLerArquivoNovo(unittest.TestCase):
              "Cargo": "CORN", "Tons": 2000},
         ])
 
-        with patch("database.pd.read_excel", return_value=df_raw), \
-             patch("database._cortar_apos_duas_linhas_vazias", side_effect=lambda x: x):
+        with patch("argentina_etl.pipelines.sailed.pd.read_excel", return_value=df_raw), \
+             patch("argentina_etl.pipelines.sailed._cortar_apos_duas_linhas_vazias", side_effect=lambda x: x):
             result = ler_arquivo_novo(Path("fake.xlsx"))
 
         self.assertEqual(result["Month"].iloc[0], 3)
@@ -263,8 +263,8 @@ class TestSalvarOnedrive(unittest.TestCase):
         def fake_to_excel(self_df, writer, sheet_name=None, **kwargs):
             sheets_criadas.append(sheet_name)
 
-        with patch("database.pd.ExcelWriter", return_value=mock_writer), \
-             patch("database.Path.mkdir"), \
+        with patch("argentina_etl.storage.onedrive.pd.ExcelWriter", return_value=mock_writer), \
+             patch("argentina_etl.storage.onedrive.Path.mkdir"), \
              patch.object(pd.DataFrame, "to_excel", fake_to_excel):
             salvar_onedrive(df, Path("onedrive/test.xlsx"))
 
@@ -291,7 +291,7 @@ class TestSalvarSqlServer(unittest.TestCase):
         mock_pyodbc.connect.return_value = mock_conn
 
         with patch.dict("sys.modules", {"pyodbc": mock_pyodbc}), \
-             patch("database.pyodbc", mock_pyodbc):
+             patch("argentina_etl.storage.sql_server.pyodbc", mock_pyodbc):
             salvar_sql_server(df, "SERVER", "DATABASE", "TABLE")
 
         delete_calls = [
@@ -319,7 +319,7 @@ class TestSalvarSqlServer(unittest.TestCase):
         mock_pyodbc.connect.return_value = mock_conn
 
         with patch.dict("sys.modules", {"pyodbc": mock_pyodbc}), \
-             patch("database.pyodbc", mock_pyodbc):
+             patch("argentina_etl.storage.sql_server.pyodbc", mock_pyodbc):
             with self.assertRaises(Exception):
                 salvar_sql_server(df, "SERVER", "DATABASE", "TABLE")
 
@@ -407,10 +407,10 @@ class TestDownloadFile(unittest.TestCase):
             mock_driver = self._make_mock_driver(downloaded)
 
             # Faz tempfile.mkdtemp retornar nossa pasta controlada
-            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
-                 patch("downloader.Service"), \
-                 patch("downloader.ChromeDriverManager"):
+            with patch("argentina_etl.downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("argentina_etl.downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("argentina_etl.downloader.Service"), \
+                 patch("argentina_etl.downloader.ChromeDriverManager"):
                 result = download_file(
                     url="http://fake.url/file",
                     file_name="vessels_sailed_update.xlsx",
@@ -433,11 +433,11 @@ class TestDownloadFile(unittest.TestCase):
             mock_driver.quit = Mock()
 
             # Pasta vazia — _wait_for_download vai esgotar o timeout
-            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
-                 patch("downloader.Service"), \
-                 patch("downloader.ChromeDriverManager"), \
-                 patch("downloader.time.sleep"):  # acelera o polling
+            with patch("argentina_etl.downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("argentina_etl.downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("argentina_etl.downloader.Service"), \
+                 patch("argentina_etl.downloader.ChromeDriverManager"), \
+                 patch("argentina_etl.downloader.time.sleep"):  # acelera o polling
                 with self.assertRaises(TimeoutError):
                     download_file(
                         url="http://fake.url/file",
@@ -456,14 +456,14 @@ class TestValidateExcelFile(unittest.TestCase):
             f.write(b"PK" + b"\x00" * 5000)
             tmp = Path(f.name)
         try:
-            from downloader import _validate_excel_file
+            from argentina_etl.downloader import _validate_excel_file
             _validate_excel_file(tmp)  # não deve levantar
         finally:
             tmp.unlink(missing_ok=True)
 
     def test_arquivo_html_levanta_valor_error(self):
         import tempfile
-        from downloader import _validate_excel_file
+        from argentina_etl.downloader import _validate_excel_file
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
             # Simula página HTML retornada em vez do Excel
             f.write(b"<html><body>Redirecting...</body></html>" * 200)
@@ -477,7 +477,7 @@ class TestValidateExcelFile(unittest.TestCase):
 
     def test_arquivo_muito_pequeno_levanta_valor_error(self):
         import tempfile
-        from downloader import _validate_excel_file
+        from argentina_etl.downloader import _validate_excel_file
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
             f.write(b"PK" + b"\x00" * 10)  # assinatura OK mas tamanho insuficiente
             tmp = Path(f.name)
@@ -519,7 +519,7 @@ class TestGetLatestFile(unittest.TestCase):
             def fake_ctime(p):
                 return ctime_map[str(p)]
 
-            with patch("latest_file.os.path.getctime", side_effect=fake_ctime):
+            with patch("argentina_etl.utils.files.os.path.getctime", side_effect=fake_ctime):
                 result = get_latest_file(Path(tmpdir))
 
         self.assertEqual(result.name, "c.xlsx")

@@ -25,7 +25,7 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
 
-from logger_config import logger
+from argentina_etl.logging_setup import logger
 
 # ---------------------------------------------------------------------------
 # Configurações do .env
