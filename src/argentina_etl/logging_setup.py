@@ -1,16 +1,29 @@
 """
-logger_config.py
+logging_setup.py
 ----------------
 Logger centralizado do projeto. Todos os módulos importam `logger` daqui.
 """
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import TimedRotatingFileHandler, SMTPHandler
 from pathlib import Path
 
 LOGGER_NAME = "argentina_logger"
-_DEFAULT_LOG_FILE = Path.home() / "Desktop" / "Argentina" / "logs" / "argentina_updater.log"
+
+# Raiz do projeto: src/argentina_etl/logging_setup.py -> parents[2]
+_ROOT = Path(__file__).resolve().parents[2]
+
+# O log vive junto do projeto, nao num caminho absoluto de outra pasta. Ate
+# 2026-07-28 isto era Path.home()/"Desktop"/"Argentina"/"logs", o que amarrava
+# o sailed_auto ao repositorio que ele veio substituir — mover ou arquivar
+# aquela pasta levava o log junto.
+#
+# DIR_LOGS permite sobrescrever, mas so vale se o .env ja tiver sido carregado
+# quando este modulo for importado; por isso a raiz do projeto e o padrao, e
+# nao ha dependencia de config.py (que importaria o logger de volta).
+_DEFAULT_LOG_FILE = Path(os.getenv("DIR_LOGS") or (_ROOT / "logs")) / "argentina_updater.log"
 
 # --- Configurações de e-mail ---
 SMTP_HOST = "smtp.gmail.com"        # ou smtp.office365.com, etc.

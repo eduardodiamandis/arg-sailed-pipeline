@@ -15,6 +15,9 @@ env/
 *.log
 logs/
 
+# Dados — downloads brutos, banco e snapshots. Gerados pelo pipeline.
+data/
+
 # Excel gerados
 *.xlsx
 *.xls
