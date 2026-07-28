@@ -1,16 +1,19 @@
 """
-main.py
--------
+__main__.py
+-----------
 Orquestrador do pipeline de atualização do banco Arg_sailed_database.
 
 Fluxo:
-  1. Download do arquivo Sailed e Line-Up
-  2. Lê o arquivo mais recente do Sailed
-  3. Lê o banco de dados existente
-  4. Merge inteligente (remove períodos sobrepostos, insere novos)
-  5. Salva localmente, no OneDrive e no SQL Server
-  6. Cria Pivot Tables no arquivo OneDrive
-  7. Envia resumo do log por e-mail
+  1.  Download dos arquivos Sailed e Line-Up
+  1b. Snapshot diário do Line-Up no SQL Server (append-only)
+  2.  Lê o arquivo mais recente do Sailed e valida o corte de rodapé
+  3.  Lê o banco existente
+  4.  Merge período a período, com trava de segurança, e validações pós-merge
+  5.  Salva localmente, no OneDrive (com as sheets derivadas e as pivots) e no
+      SQL Server
+  6.  Envia resumo do log por e-mail
+
+Só orquestra: a regra de negócio mora em pipelines/ e a escrita em storage/.
 """
 from __future__ import annotations
 
@@ -18,8 +21,6 @@ import sys
 import time
 
 import pandas as pd
-
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent / "src"))
 
 from argentina_etl.config import (
     DIR_LINEUP_BACKUP,
@@ -47,7 +48,6 @@ from argentina_etl.utils.files import get_latest_file
 from argentina_etl.pipelines.lineup import ler_arquivo_lineup
 from argentina_etl.storage.sql_server import salvar_lineup_sql
 from argentina_etl.logging_setup import logger, _DEFAULT_LOG_FILE
-from argentina_etl.storage.pivot import criar_pivot_tables   # módulo separado com timeout
 from argentina_etl.validation import detectar_gaps, validar_continuidade, validar_corte_rodape
 
 
@@ -157,14 +157,20 @@ def main() -> None:
     datas_str = ultimas["Date"].dt.strftime("%d/%m/%Y").to_string(index=False)
     logger.info(f"Últimas 15 datas no banco atualizado:\n{datas_str}")
 
-    # Continuidade entre o fim da base e o inicio do arquivo novo. E ESTA que
-    # detecta a classe de perda ocorrida em 26-30/06/2026: base parada em 25/06
-    # e arquivo trazendo so julho. O detectar_gaps abaixo NAO pega esse caso,
-    # porque so examina os periodos presentes no arquivo novo.
-    # Detecta dias que existiam no banco e sumiram apos o merge — na pratica,
-    # o caso em que a trava de seguranca rejeitou um periodo. Os gaps sao
-    # registrados como WARNING e o _extract_warnings do email_report os coleta
-    # do log, entao aparecem na secao "Avisos" do e-mail sem acoplamento extra.
+    # Duas validacoes complementares:
+    #
+    # validar_continuidade compara o fim da base com o inicio do arquivo novo.
+    # E ESTA que detecta a classe de perda ocorrida em 26-30/06/2026: base
+    # parada em 25/06 e arquivo trazendo so julho.
+    #
+    # detectar_gaps olha os dias que existiam no banco e sumiram apos o merge —
+    # na pratica, o caso em que a trava de seguranca rejeitou um periodo. Ele
+    # NAO pega o caso acima, porque so examina os periodos presentes no arquivo
+    # novo.
+    #
+    # Os avisos das duas saem como WARNING no log, e o _extract_warnings do
+    # report.py os coleta de la: aparecem na secao "Avisos" do e-mail sem
+    # acoplamento extra.
     #
     # 'db' ainda e o banco PRE-merge: merge_com_banco converte a coluna Date
     # in-place mas nao remove linhas.
@@ -228,28 +234,16 @@ def main() -> None:
         logger.error(f"Falha ao salvar no SQL Server: {e}")
         pipeline_ok = False
 
-    # ------------------------------------------------------------------
-    # 6. Pivot Tables (com timeout — não trava o Task Scheduler)
-    # ------------------------------------------------------------------
-    logger.info("--- ETAPA 6: Pivot Tables ---")
-
-    try:
-        criar_pivot_tables(PATH_ONEDRIVE)
-    except TimeoutError as e:
-        logger.error(f"Timeout nas Pivot Tables: {e}")
-        pipeline_ok = False
-    except Exception as e:
-        logger.error(f"Falha ao criar Pivot Tables: {e}")
-        pipeline_ok = False
-    finally:
-        # Notifica o OneDrive após o Excel soltar o arquivo
-        _forcar_sync_onedrive(PATH_ONEDRIVE)
+    # As Pivot Tables deixaram de ser uma etapa: sao geradas dentro de
+    # salvar_onedrive, com pandas, na mesma escrita das demais sheets. A
+    # automacao COM do Excel que existia aqui foi removida — ver
+    # storage/onedrive.py.
 
     # ------------------------------------------------------------------
-    # 7. E-mail com resumo do log
+    # 6. E-mail com resumo do log
     # ------------------------------------------------------------------
     duration = time.time() - start_time
-    logger.info("--- ETAPA 7: Envio de e-mail ---")
+    logger.info("--- ETAPA 6: Envio de e-mail ---")
 
     if pipeline_ok:
         logger.info("=" * 60)
