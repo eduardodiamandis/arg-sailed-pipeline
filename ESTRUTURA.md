@@ -657,17 +657,50 @@ e a mensagem do porquê não chegou.
 - [x] **Autenticação validada**: token emitido com sucesso em 2026-07-29
 - [x] Configuração no `.env`, com `GRAPH_UPLOAD_ENABLED=false`
 - [x] `docs/graph-permission-request.md`: e-mail de solicitação, enviado em 2026-07-29
+- [x] **Ligado no `__main__.py` como ETAPA 5b, atrás da flag** *(2026-07-29)* — com a
+      flag em `false` o pipeline registra uma linha de INFO e segue; nada muda em
+      produção. Quando a permissão sair, **basta virar a flag**
+- [x] **Variáveis do Graph no `config.py`** — estavam no `.env` e no `.env.example`,
+      mas nunca chegaram ao `config.py`, violando a regra dos três lugares da
+      [seção 4](#configuração). Sem isso, virar a flag não publicaria nada
+- [x] `validar_config_graph()` + 7 testes novos (`test_config_graph.py`)
 
 **Aguardando:** concessão da permissão `Sites.Selected` (Aplicativo) mais a concessão
 de escrita neste site específico. Até lá as chamadas retornam `401`.
+
+**Verificado em 2026-07-29, 14h41: a permissão ainda não saiu.** O teste de ponta a
+ponta contra o tenant real para no segundo passo:
+
+| Passo | Resultado |
+|---|---|
+| Token de aplicativo | ✅ emitido |
+| `GET /sites/cgbent.sharepoint.com:/sites/ZGC-PBIResearch` | ❌ **HTTP 401** `generalException` |
+
+O token sair e a chamada falhar é a assinatura exata do que falta: a aplicação existe
+e se autentica, mas **não tem acesso a nada**. Repetir esse teste é a forma de saber
+quando a permissão foi concedida — antes de virar a flag.
+
+**As variáveis do Graph não usam `_require`, de propósito.** Elas são lidas com
+`os.getenv` e default vazio. Se usassem `_require`, uma variável faltando derrubaria o
+`config.py` no import — e com isso o pipeline inteiro, por causa de um recurso
+*opcional que está desligado*. A verificação acontece onde importa: com a flag ligada,
+`validar_config_graph()` devolve o que falta e a etapa falha com o nome das variáveis
+no log. É o mesmo princípio das validações — informar sem derrubar.
 
 ⚠️ **`Sites.Selected` não concede acesso a nada sozinha.** É preciso um segundo passo —
 `POST /sites/{site-id}/permissions` — senão o aplicativo fica com a permissão e sem
 acesso, retornando `403`. É o ponto em que a maioria trava.
 
-**Quando a permissão sair:** virar a flag para `true`, ligar a chamada no `__main__.py`
-e testar. A verificação de sincronização da Fase G torna-se desnecessária — ela existe
-porque hoje não há confirmação de entrega; com o Graph, a confirmação é a resposta.
+**Quando a permissão sair:** rodar o teste dos três passos acima; saindo verde,
+`GRAPH_UPLOAD_ENABLED=true` no `.env` e executar o pipeline uma vez à mão. Não há mais
+código a escrever. A verificação de sincronização da Fase G torna-se desnecessária —
+ela existe porque hoje não há confirmação de entrega; com o Graph, a confirmação é a
+resposta.
+
+**Falha na publicação marca o pipeline como ERRO** (`pipeline_ok = False`), então o
+e-mail sai com o cabeçalho de erro. Não aborta: o SQL Server já foi gravado a essa
+altura, e derrubar a execução não desfaria nada nem entregaria o arquivo. O que não
+pode acontecer é a falha passar em silêncio — foi assim que se perderam 21 noites.
 
 ⚠️ **O client secret expira em 28/07/2028.** Na expiração a publicação para, e o
 sintoma seria de novo uma falha silenciosa.

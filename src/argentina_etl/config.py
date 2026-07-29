@@ -29,6 +29,11 @@ def _require(key: str) -> str:
     return value
 
 
+def _flag(key: str, padrao: str) -> bool:
+    """Le uma variavel booleana. Aceita as grafias em portugues e ingles."""
+    return os.getenv(key, padrao).strip().lower() in ("1", "true", "yes", "sim")
+
+
 # --- URLs ---
 URL_SAILED: str = _require("URL_SAILED")
 URL_LINEUP: str = _require("URL_LINEUP")
@@ -55,10 +60,43 @@ SQL_TABLE_LINEUP: str = _require("SQL_TABLE_LINEUP")
 # snapshot anterior antes de inserir, para que uma reexecucao substitua os dados
 # em vez de manter os da primeira rodada. Com False, reexecucoes sao ignoradas.
 # Nao afeta o historico de outros dias em nenhum dos casos. Ver ESTRUTURA.md 9.2.
-LINEUP_FORCE_SNAPSHOT: bool = os.getenv("LINEUP_FORCE_SNAPSHOT", "true").strip().lower() in (
-    "1", "true", "yes", "sim"
-)
+LINEUP_FORCE_SNAPSHOT: bool = _flag("LINEUP_FORCE_SNAPSHOT", "true")
 
 # --- Timeouts ---
 TIMEOUT_SAILED: int = int(os.getenv("TIMEOUT_SAILED", "40"))
 TIMEOUT_LINEUP: int = int(os.getenv("TIMEOUT_LINEUP", "18"))
+
+# --- SharePoint via Microsoft Graph (Fase H) ---
+# Publicacao com confirmacao de entrega, em substituicao a pasta sincronizada
+# pelo cliente do OneDrive. Ver ESTRUTURA.md, Fase H.
+#
+# Estas NAO usam _require de proposito: a publicacao e opcional e esta desligada
+# ate a permissao Sites.Selected ser concedida. Uma variavel faltando aqui nao
+# pode impedir o pipeline inteiro de subir — o que ela impede e a publicacao, e
+# quem verifica isso e validar_config_graph(), chamada so quando a flag esta on.
+GRAPH_UPLOAD_ENABLED: bool = _flag("GRAPH_UPLOAD_ENABLED", "false")
+GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "").strip()
+GRAPH_CLIENT_ID: str = os.getenv("GRAPH_CLIENT_ID", "").strip()
+GRAPH_CLIENT_SECRET: str = os.getenv("GRAPH_CLIENT_SECRET", "").strip()
+GRAPH_HOST: str = os.getenv("GRAPH_HOST", "").strip()
+GRAPH_SITE_PATH: str = os.getenv("GRAPH_SITE_PATH", "").strip()
+GRAPH_FOLDER: str = os.getenv("GRAPH_FOLDER", "").strip()
+
+_GRAPH_OBRIGATORIAS = (
+    "GRAPH_TENANT_ID",
+    "GRAPH_CLIENT_ID",
+    "GRAPH_CLIENT_SECRET",
+    "GRAPH_HOST",
+    "GRAPH_SITE_PATH",
+    "GRAPH_FOLDER",
+)
+
+
+def validar_config_graph() -> list[str]:
+    """
+    Nomes das variaveis do Graph que faltam. Lista vazia = configuracao completa.
+
+    Devolve em vez de levantar para que quem chama decida: com a publicacao
+    ligada, faltar variavel e erro; com ela desligada, nao interessa.
+    """
+    return [nome for nome in _GRAPH_OBRIGATORIAS if not globals().get(nome)]

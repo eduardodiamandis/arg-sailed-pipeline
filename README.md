@@ -104,6 +104,7 @@ que os dados devem ser; `storage/` só escreve o que recebeu. Se um módulo de
 | 3 | Lê o banco existente |
 | 4 | Merge período a período, com trava de segurança, e validações |
 | 5 | Salva local, no OneDrive (com pivots) e no SQL Server |
+| 5b | Publica no SharePoint via Microsoft Graph — **só se `GRAPH_UPLOAD_ENABLED=true`** |
 | 6 | Envia o relatório por e-mail |
 
 ### Duas regras que não devem ser alteradas sem entender

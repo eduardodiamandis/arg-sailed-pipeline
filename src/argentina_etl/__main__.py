@@ -11,6 +11,7 @@ Fluxo:
   4.  Merge período a período, com trava de segurança, e validações pós-merge
   5.  Salva localmente, no OneDrive (com as sheets derivadas e as pivots) e no
       SQL Server
+  5b. Publica no SharePoint via Graph, se GRAPH_UPLOAD_ENABLED estiver ligado
   6.  Envia resumo do log por e-mail
 
 Só orquestra: a regra de negócio mora em pipelines/ e a escrita em storage/.
@@ -25,6 +26,13 @@ import pandas as pd
 from argentina_etl.config import (
     DIR_LINEUP_BACKUP,
     DIR_SAILED_BACKUP,
+    GRAPH_CLIENT_ID,
+    GRAPH_CLIENT_SECRET,
+    GRAPH_FOLDER,
+    GRAPH_HOST,
+    GRAPH_SITE_PATH,
+    GRAPH_TENANT_ID,
+    GRAPH_UPLOAD_ENABLED,
     LINEUP_FORCE_SNAPSHOT,
     PATH_DATABASE,
     PATH_DATABASE_OUTPUT,
@@ -37,11 +45,13 @@ from argentina_etl.config import (
     TIMEOUT_SAILED,
     URL_LINEUP,
     URL_SAILED,
+    validar_config_graph,
 )
 from argentina_etl.pipelines.sailed import ler_arquivo_novo, merge_com_banco
 from argentina_etl.storage.excel import salvar_local
 from argentina_etl.storage.onedrive import salvar_onedrive, _forcar_sync_onedrive
 from argentina_etl.storage.sql_server import salvar_sql_server
+from argentina_etl.storage.sharepoint import publicar
 from argentina_etl.downloader import download_file
 from argentina_etl.reporting.report import send_log_report
 from argentina_etl.utils.files import get_latest_file
@@ -238,6 +248,50 @@ def main() -> None:
     # salvar_onedrive, com pandas, na mesma escrita das demais sheets. A
     # automacao COM do Excel que existia aqui foi removida — ver
     # storage/onedrive.py.
+
+    # ------------------------------------------------------------------
+    # 5b. Publicacao no SharePoint via Microsoft Graph
+    # ------------------------------------------------------------------
+    # Existe porque a pasta sincronizada pelo cliente do OneDrive nao confirma
+    # entrega: em 28/07/2026 o arquivo ficou "Sincronizacao pendente" por mais
+    # de 9 horas, com a copia local certa e a do servidor velha, sem nenhum
+    # sinal. Aqui o upload devolve o eTag do item no servidor — ou chegou, ou
+    # sabemos o codigo e a mensagem do porque nao chegou.
+    #
+    # Desligado ate a permissao Sites.Selected ser concedida; sem ela toda
+    # chamada retorna 401. Ver ESTRUTURA.md, Fase H.
+    if GRAPH_UPLOAD_ENABLED:
+        logger.info("--- ETAPA 5b: Publicacao no SharePoint ---")
+        faltando = validar_config_graph()
+        if faltando:
+            # Ligada mas sem configuracao: e erro de operacao, e precisa doer.
+            logger.error(
+                f"Publicacao no SharePoint ligada, mas faltam variaveis no .env: "
+                f"{', '.join(faltando)}. O arquivo NAO foi publicado."
+            )
+            pipeline_ok = False
+        else:
+            try:
+                publicar(
+                    PATH_ONEDRIVE,
+                    tenant_id=GRAPH_TENANT_ID,
+                    client_id=GRAPH_CLIENT_ID,
+                    client_secret=GRAPH_CLIENT_SECRET,
+                    host=GRAPH_HOST,
+                    caminho_site=GRAPH_SITE_PATH,
+                    pasta_remota=GRAPH_FOLDER,
+                )
+            except Exception as e:
+                # Falha aqui e falha de entrega: quem consome o .xlsx vai ver
+                # dados velhos. Marca o pipeline para o e-mail sair como ERRO —
+                # o SQL Server ja foi gravado, entao nao ha por que abortar.
+                logger.error(f"Falha ao publicar no SharePoint: {e}")
+                pipeline_ok = False
+    else:
+        logger.info(
+            "Publicacao no SharePoint desligada (GRAPH_UPLOAD_ENABLED=false) — "
+            "a entrega segue por conta do cliente do OneDrive."
+        )
 
     # ------------------------------------------------------------------
     # 6. E-mail com resumo do log

@@ -43,7 +43,7 @@ moving on.
 | `storage/excel.py` | Local file. |
 | `storage/onedrive.py` | Spreadsheet with derived sheets and pivots; OneDrive sync check. |
 | `storage/sql_server.py` | Both flows: `salvar_sql_server` and `salvar_lineup_sql`. |
-| `storage/sharepoint.py` | Microsoft Graph upload. Implemented, **not wired in yet** — awaiting permission. |
+| `storage/sharepoint.py` | Microsoft Graph upload. Wired into `__main__` as step 5b, but gated by `GRAPH_UPLOAD_ENABLED`, which stays `false` until the `Sites.Selected` permission is granted. Until then every call returns `401`. |
 | `reporting/report.py` | HTML report over SMTP. |
 
 **The `pipelines/` vs `storage/` split is the point.** `pipelines/` decides what the
