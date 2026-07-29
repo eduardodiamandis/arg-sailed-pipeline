@@ -52,9 +52,15 @@ to consult a business rule, it is in the wrong place.
 
 ## Rules that must not be changed without understanding them
 
-**Merge safety lock** (`pipelines/sailed.py`). A period from the new file replaces the
-database only if it has ≥ as many rows. Without it, a truncated NABSA file would
-destroy a whole month — permanently, since the base is rewritten on every run.
+**Merge safety lock** (`pipelines/sailed.py`). Replacement is *wholesale*: an accepted
+period has its whole month deleted and reinserted from the new file. So a period is
+only accepted if it passes **both** checks — (1) **volume**: ≥ as many rows as the
+database, and (2) **coverage**: it carries every day the database already has for that
+month. Without check 1, a truncated NABSA file would destroy a whole month; without
+check 2, a file that is fat at the start and empty at the end passes silently — neither
+`detectar_gaps` nor `validar_continuidade` catches that case. Equal row counts are
+accepted on purpose: the source restates parcels without changing the count. See
+ESTRUTURA.md, decisions 9.1 and 9.4.
 
 **The base is rewritten every run** (`storage/excel.py`, called from `__main__`). While
 the NABSA file carries the current month the merge recomposes it and a frozen base

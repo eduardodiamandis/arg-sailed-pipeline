@@ -8,9 +8,70 @@ que acabaram de ser atualizados.
 """
 from __future__ import annotations
 
+import calendar
+import datetime
+
 import pandas as pd
 
 from argentina_etl.logging_setup import logger
+
+
+def resumo_mes_corrente(
+    db: pd.DataFrame,
+    hoje: datetime.date | None = None,
+) -> dict | None:
+    """
+    Quanto falta para o mês corrente fechar.
+
+    Substituiu o despejo das "últimas 15 datas" no log: uma lista de datas
+    exige que alguém a leia e faça a conta de cabeça toda noite. O que importa
+    é uma linha só — até onde a base chegou e quantos dias faltam até o fim do
+    mês.
+
+    Returns
+    -------
+    dict com `mes`, `ultimo_dia`, `dias_no_mes`, `dias_com_dados` e
+    `dias_para_fechar`; None se o mês corrente ainda não tem nenhum dado
+    (normal na virada do mês, antes do primeiro embarque).
+    """
+    hoje = hoje or datetime.date.today()
+    dias_no_mes = calendar.monthrange(hoje.year, hoje.month)[1]
+
+    do_mes = db.loc[
+        (db["Date"].dt.month == hoje.month) & (db["Date"].dt.year == hoje.year),
+        "Date",
+    ]
+
+    if do_mes.empty:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): ainda sem dados na base — "
+            f"{dias_no_mes} dias até fechar."
+        )
+        return None
+
+    ultimo_dia = int(do_mes.dt.day.max())
+    dias_com_dados = int(do_mes.dt.day.nunique())
+    dias_para_fechar = dias_no_mes - ultimo_dia
+
+    if dias_para_fechar == 0:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): fechado — base vai até o dia "
+            f"{ultimo_dia}/{dias_no_mes}, com {dias_com_dados} dias de embarque."
+        )
+    else:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): base vai até o dia "
+            f"{ultimo_dia}/{dias_no_mes} — faltam {dias_para_fechar} dia(s) para fechar "
+            f"({dias_com_dados} dias com embarque até aqui)."
+        )
+
+    return {
+        "mes": hoje.strftime("%m/%Y"),
+        "ultimo_dia": ultimo_dia,
+        "dias_no_mes": dias_no_mes,
+        "dias_com_dados": dias_com_dados,
+        "dias_para_fechar": dias_para_fechar,
+    }
 
 
 def detectar_gaps(

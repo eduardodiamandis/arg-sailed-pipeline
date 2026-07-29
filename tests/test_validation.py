@@ -18,7 +18,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import pandas as pd
 import pytest
 
-from argentina_etl.validation import detectar_gaps, validar_continuidade, validar_corte_rodape
+from datetime import date
+
+from argentina_etl.validation import (
+    detectar_gaps,
+    resumo_mes_corrente,
+    validar_continuidade,
+    validar_corte_rodape,
+)
 
 
 def _df(dates: list[str]) -> pd.DataFrame:
@@ -136,3 +143,51 @@ def test_corte_rodape_nao_levanta_com_data_recente():
 def test_corte_rodape_nao_levanta_com_data_suspeita():
     """Última data antes do dia 15 é suspeita, mas só gera warning."""
     validar_corte_rodape(_df(["2026-07-03"]), "teste.xlsx")
+
+
+# ---------------------------------------------------------------------------
+# resumo_mes_corrente
+# ---------------------------------------------------------------------------
+# Substituiu o despejo das "ultimas 15 datas" no log: o que interessa e ate
+# onde a base chegou e quantos dias faltam para o mes fechar.
+
+def _base_do_mes(dias, ano=2026, mes=7):
+    return pd.DataFrame({"Date": pd.to_datetime(
+        [f"{ano}-{mes:02d}-{d:02d}" for d in dias]
+    )})
+
+
+def test_resumo_conta_os_dias_que_faltam_para_fechar():
+    # Julho tem 31 dias; a base vai ate o dia 28 -> faltam 3
+    r = resumo_mes_corrente(_base_do_mes([1, 15, 28]), hoje=date(2026, 7, 29))
+    assert r["ultimo_dia"] == 28
+    assert r["dias_no_mes"] == 31
+    assert r["dias_para_fechar"] == 3
+    assert r["dias_com_dados"] == 3
+
+
+def test_resumo_reconhece_mes_fechado():
+    r = resumo_mes_corrente(_base_do_mes([1, 31]), hoje=date(2026, 7, 31))
+    assert r["dias_para_fechar"] == 0
+
+
+def test_resumo_devolve_none_sem_dados_do_mes():
+    """Normal na virada do mes, antes do primeiro embarque."""
+    base = _base_do_mes([10, 20], mes=6)
+    assert resumo_mes_corrente(base, hoje=date(2026, 7, 2)) is None
+
+
+def test_resumo_usa_o_comprimento_real_do_mes():
+    # Fevereiro de 2026 tem 28 dias
+    r = resumo_mes_corrente(_base_do_mes([25], mes=2), hoje=date(2026, 2, 26))
+    assert r["dias_no_mes"] == 28
+    assert r["dias_para_fechar"] == 3
+
+
+def test_resumo_ignora_outros_meses_e_anos():
+    base = pd.DataFrame({"Date": pd.to_datetime(
+        ["2026-07-10", "2026-08-31", "2025-07-31"]
+    )})
+    r = resumo_mes_corrente(base, hoje=date(2026, 7, 20))
+    assert r["ultimo_dia"] == 10
+    assert r["dias_com_dados"] == 1

@@ -209,6 +209,84 @@ class TestLerArquivoNovo(unittest.TestCase):
         self.assertIsInstance(result["Date"].iloc[0], pd.Timestamp)
 
 
+class TestMergeCobertura(unittest.TestCase):
+    """
+    Trava de cobertura: um periodo so e substituido se o arquivo novo trouxer
+    todos os dias que o banco ja tem. Sem isso, um arquivo com MAIS linhas
+    porem MENOS dias apagava o fim do mes em silencio — nem detectar_gaps nem
+    validar_continuidade pegavam o caso. Ver ESTRUTURA.md, decisao 9.4.
+    """
+
+    def _frame(self, dias, por_dia, mes=7, tons=100.0):
+        linhas = [
+            {"Date": pd.Timestamp(2026, mes, d), "Destination": "X",
+             "Origin": "ARGENTINA", "Cargo": "CORN", "Tons": tons,
+             "Month": mes, "Year": 2026}
+            for d in dias for _ in range(por_dia)
+        ]
+        return pd.DataFrame(linhas)
+
+    def test_mais_linhas_menos_dias_e_rejeitado(self):
+        db = self._frame(range(1, 21), 5)      # 100 linhas, dias 1-20
+        novo = self._frame(range(1, 16), 8)    # 120 linhas, dias 1-15
+
+        result = merge_com_banco(novo, db)
+
+        # O banco inteiro deve ter sido preservado
+        self.assertEqual(len(result), 100)
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 21)))
+
+    def test_mesmos_dias_e_mais_linhas_e_aceito(self):
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 21), 6)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 120)
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 21)))
+
+    def test_dias_a_mais_no_arquivo_novo_e_aceito(self):
+        """O caso normal do dia a dia: o arquivo traz o mes com mais um dia."""
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 22), 5)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 22)))
+
+    def test_contagem_igual_e_aceita(self):
+        """
+        Reformulacao da fonte: o NABSA redivide parcelas sem mudar o numero de
+        linhas. Foi o caso do SAROCHA NAREE em 14/04/2026, soma identica.
+        """
+        db = self._frame(range(1, 21), 5, tons=100.0)
+        novo = self._frame(range(1, 21), 5, tons=200.0)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 100)
+        self.assertTrue((result["Tons"] == 200.0).all())
+
+    def test_motivo_da_rejeicao_cita_os_dias_perdidos(self):
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 16), 8)
+
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            merge_com_banco(novo, db)
+
+        avisos = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+        self.assertIn("REJEITADO", avisos)
+        self.assertIn("16", avisos)  # primeiro dia perdido
+
+    def test_periodo_novo_no_banco_e_sempre_aceito(self):
+        db = self._frame(range(1, 21), 5, mes=7)
+        novo = self._frame([1], 1, mes=8)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 101)
+
+
 class TestMergeComBanco(unittest.TestCase):
 
     def test_remove_periodos_sobrepostos(self):

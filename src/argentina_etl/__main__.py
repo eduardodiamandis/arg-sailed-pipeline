@@ -62,7 +62,12 @@ from argentina_etl.utils.files import get_latest_file
 from argentina_etl.pipelines.lineup import ler_arquivo_lineup
 from argentina_etl.storage.sql_server import salvar_lineup_sql
 from argentina_etl.logging_setup import logger, _DEFAULT_LOG_FILE
-from argentina_etl.validation import detectar_gaps, validar_continuidade, validar_corte_rodape
+from argentina_etl.validation import (
+    detectar_gaps,
+    resumo_mes_corrente,
+    validar_continuidade,
+    validar_corte_rodape,
+)
 
 
 def main() -> None:
@@ -166,14 +171,13 @@ def main() -> None:
 
     db_atualizado = merge_com_banco(df_novo, db)
 
-    ultimas = (
-        db_atualizado
-        .sort_values("Date", ascending=False)
-        .head(15)
-        .sort_values("Date")
-    )
-    datas_str = ultimas["Date"].dt.strftime("%d/%m/%Y").to_string(index=False)
-    logger.info(f"Últimas 15 datas no banco atualizado:\n{datas_str}")
+    # Antes aqui se despejavam as ultimas 15 datas do banco. Uma lista crua
+    # exige que alguem a leia e faca a conta de cabeca toda noite; o que
+    # interessa e ate onde a base chegou e quanto falta para o mes fechar.
+    try:
+        resumo_mes_corrente(db_atualizado)
+    except Exception as e:
+        logger.error(f"Falha ao resumir o mes corrente (ignorada): {e}")
 
     # Duas validacoes complementares:
     #

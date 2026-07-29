@@ -109,9 +109,15 @@ que os dados devem ser; `storage/` só escreve o que recebeu. Se um módulo de
 
 ### Duas regras que não devem ser alteradas sem entender
 
-**A trava do merge.** Um período do arquivo novo só substitui o do banco se tiver
-número de linhas maior ou igual. Sem isso, um arquivo truncado do NABSA corromperia
-o mês inteiro — e de forma permanente, já que a base é reescrita a cada execução.
+**A trava do merge.** A substituição é **em bloco**: um período aceito tem o mês
+inteiro apagado e reinserido a partir do arquivo novo. Por isso ele só é aceito se
+passar em **duas** condições — **volume** (tem ≥ linhas que o banco) e **cobertura**
+(traz todos os dias que o banco já tem naquele mês). Sem a primeira, um arquivo
+truncado do NABSA corromperia o mês inteiro, de forma permanente, já que a base é
+reescrita a cada execução. Sem a segunda, um arquivo gordo no começo do mês e vazio
+no fim apagaria os últimos dias sem que nenhuma validação avisasse. Contagem igual é
+aceita de propósito: a fonte reformula parcelas sem mudar o número de linhas.
+Ver `ESTRUTURA.md`, decisões 9.1 e 9.4.
 
 **`fast_executemany = False` no Line-Up.** O driver legado `SQL Server` rejeita
 valores `None` com o modo rápido ligado. No Sailed pode ficar `True`.

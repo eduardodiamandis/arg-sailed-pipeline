@@ -94,13 +94,31 @@ def merge_com_banco(df_novo: pd.DataFrame, db: pd.DataFrame) -> pd.DataFrame:
     """
     Atualiza o banco de forma inteligente, período a período.
 
-    Para CADA período (mês/ano) presente no arquivo novo, compara a quantidade
-    de registros com o que já existe no banco:
-      - Se o arquivo novo tem MAIS ou IGUAL → substitui (dados mais atualizados)
-      - Se o arquivo novo tem MENOS → mantém o banco e loga um alerta
+    A substituição é EM BLOCO: um período aceito tem o mês inteiro apagado do
+    banco e reinserido a partir do arquivo novo. Não há fusão linha a linha.
+    Por isso a decisão de aceitar precisa ser conservadora.
 
-    Isso evita perda de dados quando o pipeline roda com um arquivo parcial
-    (ex: arquivo do dia 29 substituindo um março completo que já estava no banco).
+    Para CADA período (mês/ano) presente no arquivo novo, duas condições — o
+    período só é substituído se passar nas DUAS:
+
+      1. **Volume**: o arquivo novo tem ≥ linhas que o banco.
+      2. **Cobertura**: o arquivo novo traz todos os dias que o banco já tem
+         naquele mês.
+
+    Períodos ausentes do arquivo novo nunca são tocados.
+
+    Aceitar com contagem IGUAL é intencional: o NABSA reformula parcelas sem
+    mudar o número de linhas (em 14/04/2026 o SAROCHA NAREE passou de
+    14.859,14 + 25.179,20 para 20.000,00 + 20.038,34, soma idêntica). Com `>`
+    no lugar de `>=`, correções da fonte nunca entrariam.
+
+    **Por que a condição 2 existe.** Até 2026-07-29 a trava olhava só a
+    contagem. Um arquivo com MAIS linhas porém MENOS dias — gordo no começo do
+    mês, vazio no fim — era aceito, e os dias do fim sumiam sem nenhum aviso:
+    depois da substituição `db_atualizado` fica idêntico ao arquivo novo, então
+    `detectar_gaps` compara os dois e não vê diferença, e `validar_continuidade`
+    também não pega, porque os dois começam no mesmo dia. Era o mesmo formato da
+    perda de 26-30/06/2026. Ver ESTRUTURA.md, decisão 9.4.
 
     Trava de segurança obrigatória desde que a base voltou a ser reescrita a cada
     execução: sem ela, um arquivo truncado do NABSA corromperia o mês inteiro de
@@ -120,13 +138,22 @@ def merge_com_banco(df_novo: pd.DataFrame, db: pd.DataFrame) -> pd.DataFrame:
 
         mask_novo = (df_novo["Date"].dt.month == mes) & (df_novo["Date"].dt.year == ano)
         linhas_novo = mask_novo.sum()
-        dias_novo = df_novo.loc[mask_novo, "Date"].dt.day.nunique()
+        dias_novo_set = set(df_novo.loc[mask_novo, "Date"].dt.day)
+        dias_novo = len(dias_novo_set)
 
         mask_db = (db["Date"].dt.month == mes) & (db["Date"].dt.year == ano)
         linhas_db = mask_db.sum()
-        dias_db = db.loc[mask_db, "Date"].dt.day.nunique()
+        dias_db_set = set(db.loc[mask_db, "Date"].dt.day)
+        dias_db = len(dias_db_set)
 
-        if linhas_db == 0 or linhas_novo >= linhas_db:
+        # Dias que existem no banco e NAO vieram no arquivo novo. Como a
+        # substituicao e em bloco, aceitar o periodo apagaria estes dias.
+        dias_perdidos = sorted(dias_db_set - dias_novo_set)
+
+        volume_ok = linhas_novo >= linhas_db
+        cobertura_ok = not dias_perdidos
+
+        if linhas_db == 0 or (volume_ok and cobertura_ok):
             periodos_aceitos.append(periodo)
             logger.info(
                 f"  {periodo}: ACEITO — novo={linhas_novo} linhas/{dias_novo} dias "
@@ -134,9 +161,18 @@ def merge_com_banco(df_novo: pd.DataFrame, db: pd.DataFrame) -> pd.DataFrame:
             )
         else:
             periodos_rejeitados.append(periodo)
+            # Dizer QUAL das duas condicoes falhou: as causas sao diferentes.
+            # Menos linhas costuma ser arquivo truncado no download; dias
+            # faltando costuma ser arquivo parcial do fim do mes.
+            if not volume_ok and not cobertura_ok:
+                motivo = f"tem menos linhas E perderia os dias {dias_perdidos}"
+            elif not volume_ok:
+                motivo = "tem menos linhas"
+            else:
+                motivo = f"perderia os dias {dias_perdidos} que existem no banco"
             logger.warning(
                 f"  ⚠️ {periodo}: REJEITADO — novo={linhas_novo} linhas/{dias_novo} dias "
-                f"vs banco={linhas_db} linhas/{dias_db} dias "
+                f"vs banco={linhas_db} linhas/{dias_db} dias: {motivo} "
                 f"→ mantendo dados do banco para não perder informação"
             )
 

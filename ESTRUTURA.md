@@ -840,6 +840,44 @@ Verificado: três inserções seguidas deixam 202 linhas, sem duplicação.
 
 ---
 
+### 9.4 A trava de merge olhava só a contagem — ✅ **RESOLVIDO** *(2026-07-29)*
+
+A substituição de um período é **em bloco**: o mês inteiro sai do banco e volta a
+partir do arquivo novo. A trava da [9.1](#91-o-banco-base-nunca-é-atualizado--resolvido)
+protegia isso comparando **apenas o número de linhas**.
+
+**O que passava.** Um arquivo com **mais linhas porém menos dias** — gordo no começo do
+mês, vazio no fim — era aceito, e os dias do fim sumiam. Reproduzido:
+
+| Cenário | Antes | Agora |
+|---|---|---|
+| Arquivo truncado (25 linhas vs 100) | ✅ rejeitado | ✅ rejeitado |
+| Arquivo maior, mesmos dias | ✅ aceito | ✅ aceito |
+| **120 linhas / dias 1–15 vs 100 linhas / dias 1–20** | ❌ **aceito, dias 16–20 perdidos em silêncio** | ✅ **rejeitado** |
+
+**E nenhuma validação pegava.** Depois da substituição em bloco, `db_atualizado` fica
+idêntico ao arquivo novo — então `detectar_gaps`, que compara os dois, não vê diferença
+(ele só dispara quando o período foi *rejeitado*). E `validar_continuidade` compara o fim
+da base com o início do arquivo, que nesse caso coincidem. Mesmo formato da perda de
+26–30/06/2026: sem sinal nenhum.
+
+**A resolução.** O aceite passou a exigir **duas** condições:
+
+1. **Volume** — o arquivo novo tem ≥ linhas que o banco.
+2. **Cobertura** — o arquivo novo traz todos os dias que o banco já tem naquele mês.
+
+O log da rejeição diz qual das duas falhou, porque as causas são diferentes: menos
+linhas costuma ser download truncado; dias faltando costuma ser arquivo parcial.
+
+**Contagem igual continua sendo aceita**, e isso é deliberado — o NABSA reformula
+parcelas sem mudar o número de linhas (SAROCHA NAREE, 14/04/2026: 14.859,14 + 25.179,20
+virou 20.000,00 + 20.038,34, soma idêntica). Com `>` no lugar de `>=`, correções da fonte
+nunca entrariam.
+
+**Impacto medido em produção: nenhum.** Com o arquivo do NABSA de hoje, 2026-07 tem
+547 linhas / 28 dias dos dois lados — aceito pelas duas regras. A trava nova só age no
+cenário que antes passava em silêncio.
+
 ### Decisões ainda abertas
 
 *(nenhuma no momento)*
