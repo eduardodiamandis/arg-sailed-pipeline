@@ -20,6 +20,39 @@ COLUNAS = ["Date", "Destination", "Origin", "Cargo", "Tons", "Month", "Year"]
 # Limpeza do arquivo bruto
 # ---------------------------------------------------------------------------
 
+def remover_colunas_sem_nome(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Descarta as colunas 'Unnamed: N' que o Excel arrasta para dentro da base.
+
+    A base tinha seis delas (13 a 18), reescritas a cada execucao porque o
+    merge as carregava adiante. Nao pertencem ao esquema: o Arg_Sailed do SQL
+    tem sete colunas e o pandas as inventa ao ler celulas vazias a direita dos
+    dados.
+
+    Nao remove em silencio. Se uma coluna sem nome tiver conteudo, o conteudo
+    vai para o log como WARNING antes de a coluna sair — foi assim que se
+    descobriu a anotacao 'ultima linha do banco do almyr' escondida na
+    'Unnamed: 18', na linha do PRABHU PUNI de 14/01/2020 (registrada na secao
+    10 do ESTRUTURA.md). Perder um dado por limpeza automatica seria
+    exatamente o tipo de falha silenciosa que este projeto ja pagou caro.
+    """
+    sem_nome = [c for c in df.columns if str(c).startswith("Unnamed:")]
+    if not sem_nome:
+        return df
+
+    for coluna in sem_nome:
+        preenchidas = df[coluna].notna()
+        if preenchidas.any():
+            valores = df.loc[preenchidas, coluna].astype(str).tolist()
+            logger.warning(
+                f"⚠️ Coluna sem nome '{coluna}' descartada, mas tinha "
+                f"{len(valores)} valor(es): {valores[:5]}"
+            )
+
+    logger.info(f"Colunas sem nome removidas da base: {sem_nome}")
+    return df.drop(columns=sem_nome)
+
+
 def _cortar_apos_duas_linhas_vazias(df: pd.DataFrame) -> pd.DataFrame:
     """
     Remove todas as linhas a partir de duas linhas consecutivas completamente vazias.

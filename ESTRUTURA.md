@@ -14,9 +14,9 @@
 > estrutura-alvo continuam valendo — muda o repositório onde são aplicados.
 > Ver [1.1](#11-a-descoberta-dois-repositórios-divergentes) e [8. Plano](#8-plano-de-migração).
 >
-> **Estado em 2026-07-29:** Fases 1, 2, A, B, C, D, E, F e I **concluídas**. Resta apenas
-> a Fase H, bloqueada por permissão externa. **As três decisões abertas (9.1, 9.2, 9.3)
-> resolvidas.**
+> **Estado em 2026-07-29:** Fases 1, 2, A, B, C, D, E, F, I e J **concluídas**. Resta
+> apenas a Fase H, bloqueada por permissão externa. **As três decisões abertas (9.1, 9.2,
+> 9.3) resolvidas.**
 >
 > A produção está funcionando com **um** pipeline e **um** agendamento; os dados de junho
 > foram recuperados; a base voltou a avançar sozinha; o código está em
@@ -734,6 +734,27 @@ Fora do plano original da fase, mas parte dela: `docs/`, com o pedido de permiss
 Graph. Documento operacional não é nenhum dos quatro assuntos do princípio 5 — daí o
 diretório próprio.
 
+### ✅ Fase J — Dívida técnica *(concluída em 2026-07-29)*
+
+Sete itens da [seção 10](#10-dívida-técnica-conhecida) fechados. Detalhe de cada um lá;
+o que vale destacar é que **três eram diferentes do que estava registrado**:
+
+1. **`EMAIL_BACKEND` não era cosmético.** Registrado como "polui o log", na verdade
+   matava a dica de diagnóstico que aparece quando o envio falha — o valor sujo não
+   casava com `"smtp"` nem com `"graph"`, e o e-mail só funcionava porque o `_dispatch`
+   cai no `else`.
+2. **Os logs órfãos eram de dois produtores, não um.** Os 133 `process_log_*.log` do
+   `concater.py` não estavam registrados em lugar nenhum.
+3. **A `Unnamed: 18` não estava vazia** — tinha uma anotação escrita por uma pessoa.
+   Uma limpeza automática de "colunas vazias" a teria apagado sem deixar rastro.
+
+Daí a regra que ficou no código: `remover_colunas_sem_nome()` **avisa em `WARNING` antes
+de descartar** qualquer coluna sem nome que tenha conteúdo. Limpeza silenciosa é o
+mesmo formato de falha que já custou 21 noites e 5 dias de dados aqui.
+
+**Fora de alcance por decisão:** o `LogonType: Interactive` da tarefa agendada continua
+aberto — exige um PowerShell **elevado**, que este processo não tem.
+
 ### ✅ Fase I — Suíte verde *(concluída em 2026-07-29)*
 
 Os dois testes que falhavam desde antes da migração foram consertados: **125 passando,
@@ -858,26 +879,54 @@ Fora do escopo da migração, mas registrada para não se perder:
   máquina for deslogada, o pipeline não executa. Hoje isso é uma fragilidade **dupla**: a
   tarefa **e** o cliente do OneDrive dependem de sessão ativa — a Fase H elimina a segunda
   metade. Comando de correção na [Fase E](#fase-e--aposentar-desktopargentina-quase-concluída-em-2026-07-28).
-- **Docstring de `detectar_gaps` não descreve o código** — diz comparar "com o banco ANTES da
-  atualização", mas a implementação compara `df_novo` com `db_atualizado`. Foi essa descrição
-  que sustentou a suposição errada da Fase B. Presente nos dois repositórios.
 - **`detectar_gaps` é cego para períodos fora do arquivo novo** — limite de escopo, não bug,
   mas precisa continuar documentado: quem ler o nome da função vai supor mais alcance do que
   ela tem. Coberto por `test_gaps_e_cego_para_periodo_fora_do_arquivo_novo` e complementado
-  por `validar_continuidade`.
-- **`EMAIL_BACKEND` do `sailed_auto/.env`** contém texto de instrução colado no valor
-  (`smtp         ← adicione essa linha`). Funciona, mas polui o log. Não corrigido para não
-  arriscar a entrega de e-mail que está operando.
-- **Logs antigos de outro produtor em `logs/`** — o `.bat` do repositório aposentado
-  escrevia `argentina_etl_*.log`; o logger daqui escreve `argentina_updater.log`. O
-  produtor sumiu com a `Argentina ETL Daily`, mas os arquivos antigos continuam na pasta
-  e confundem quem for procurar a execução de uma noite específica.
-- **`Arg_sailed_database.xlsx` tem 6 colunas `Unnamed: 13`–`Unnamed: 18`** vazias, reescritas
-  a cada salvamento.
-- **Esquemas divergentes** — o banco principal tem `Port`/`Terminal`/`Vessel`/`Status`, mas
-  `database.COLUNAS` só projeta 7 colunas para o SQL. Verificar se é intencional.
-- **`data/archive/____.xlsx`** — 8.760 linhas com esquema mais rico (`Port`, `Terminal`,
-  `Vessel`, `Status`). Origem desconhecida; vale identificar antes de descartar.
+  por `validar_continuidade`. **A docstring, que descrevia outro comportamento, foi
+  reescrita em 2026-07-29** e agora declara o limite explicitamente.
+
+### ✅ Resolvidas em 2026-07-29 *(Fase J)*
+
+- ~~**Docstring de `detectar_gaps`**~~ — dizia comparar "com o banco ANTES da atualização";
+  o código sempre comparou com o banco **depois**. Reescrita, com o limite de escopo e a
+  história da suposição errada da Fase B dentro dela.
+- ~~**`EMAIL_BACKEND` com texto colado no valor**~~ — era **pior que "polui o log"**. O valor
+  `smtp         ← adicione essa linha` fazia `_BACKEND` não ser igual nem a `"smtp"` nem a
+  `"graph"`. O envio funcionava **por acidente** (`_dispatch` cai no `else`), mas o
+  `if _BACKEND == "smtp"` do tratamento de erro nunca era verdadeiro: a dica de configurar
+  `EMAIL_BACKEND=graph`, que só apareceria numa falha de envio, estava **morta**. Corrigido
+  nos dois lados — valor limpo no `.env` (backup em `.env.bak-20260729-dividatecnica`) e
+  `_primeira_palavra()` no `report.py`, que lê só o primeiro token.
+- ~~**Logs de outros produtores em `logs/`**~~ — eram **três** produtores, não dois:
+  `argentina_updater.log*` (vivo, 31 arquivos), `argentina_etl_*.log` (o `.bat` aposentado,
+  25 arquivos, até 27/07/2026) e `process_log_*.log` (**133 arquivos**, do `concater.py`,
+  parado desde 10/03/2026 — este não estava registrado). Os 158 órfãos foram **movidos, não
+  apagados**, para `logs/_produtores-aposentados/`: são a evidência das 21 noites de falha.
+- ~~**6 colunas `Unnamed: 13`–`Unnamed: 18`**~~ — `remover_colunas_sem_nome()` em
+  `pipelines/sailed.py`, aplicada na leitura da base para não voltarem pelo write-back.
+  19 → 13 colunas, 46.945 linhas preservadas.
+
+  ⚠️ **A `Unnamed: 18` não estava vazia.** Escondia uma anotação humana —
+  *"ultima linha do banco do almyr"* — na linha do **PRABHU PUNI, SAN LORENZO,
+  14/01/2020, 14.010,34 t de WHEAT**, marcando a fronteira de uma base anterior.
+  Registrada aqui porque a coluna some, e a função avisa em `WARNING` antes de
+  descartar qualquer coluna sem nome que tenha conteúdo.
+- ~~**Esquemas divergentes**~~ — **intencional, verificado no servidor.** `dbo.Arg_Sailed`
+  tem exatamente 8 colunas (`Date`, `Destination`, `Origin`, `Cargo`, `Tons`, `Month`,
+  `Year` + `UpdatedAt`), então `COLUNAS` projetar 7 está certo — acrescentar colunas
+  quebraria o `INSERT`. As colunas ricas (`Port`, `Terminal`, `Vessel`, `Status`,
+  `Coordinator`, `Charterer`) vivem só no `.xlsx`. Base e SQL batem em **46.945 linhas**.
+- ~~**`data/archive/____.xlsx`**~~ — **identificado: snapshot velho, superado.** 8.684 linhas
+  únicas, das quais 8.681 já estão na base; cobre até 17/04/2026 (a base vai a 28/07). As
+  3 exclusivas são **reformulações da fonte, não perda**:
+
+  | Registro | Situação |
+  |---|---|
+  | SAROCHA NAREE, 14/04, 2 linhas | O NABSA redividiu as parcelas: 14.859,14 + 25.179,20 virou 20.000,00 + 20.038,34. **Soma idêntica: 40.038,34 t** |
+  | DITLEV REEFER, 12/04, CITRUS 25.000 t | Removido pela fonte. A base tem *mais* linhas nesse dia (19 vs 18) e mais CITRUS no total (18 vs 12) — não é truncamento |
+
+  Não guarda nada de único. Mantido em `data/archive/` (que é gitignored); descartá-lo é
+  seguro, mas não urgente.
 
 ---
 

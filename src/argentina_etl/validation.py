@@ -18,12 +18,33 @@ def detectar_gaps(
     db_atualizado: pd.DataFrame,
 ) -> list[dict]:
     """
-    Para cada período (mês/ano) presente no arquivo novo, verifica se há dias
-    com dados no banco final que formam uma sequência contínua.
+    Dias que existem no banco JÁ ATUALIZADO mas não vieram no arquivo novo.
 
-    NÃO compara com dias do calendário (nem todo dia tem embarque).
-    Em vez disso, compara com o banco ANTES da atualização para ver se
-    perdemos dias que existiam antes.
+    Para cada período (mês/ano) presente em `df_novo`, compara o conjunto de
+    dias do arquivo com o conjunto de dias que o período tem em
+    `db_atualizado`. Sobrando dias no banco, eles viram um gap.
+
+    Na prática isso pega o caso em que a trava de segurança de
+    `merge_com_banco` rejeitou o período: o banco manteve os dias antigos e o
+    arquivo novo trouxe menos.
+
+    NÃO compara com o calendário — nem todo dia tem embarque.
+
+    ⚠️ **Limite de escopo: só examina períodos presentes no arquivo novo.**
+    Um mês que sumiu por inteiro, ou que nunca aparece no arquivo, é invisível
+    aqui. Foi exatamente o caso de 26–30/06/2026: o arquivo trazia apenas
+    julho, junho jamais era examinado, e a função reportava "nenhum gap". Quem
+    cobre esse ângulo é `validar_continuidade`, comparando o fim da base com o
+    início do arquivo novo. Ver `test_gaps_e_cego_para_periodo_fora_do_arquivo_novo`.
+
+    Até 2026-07-29 esta docstring dizia comparar "com o banco ANTES da
+    atualização" — o código sempre comparou com o banco DEPOIS. Foi essa
+    descrição que sustentou a suposição errada da Fase B (ESTRUTURA.md).
+
+    Parameters
+    ----------
+    df_novo       : arquivo recém-lido do NABSA
+    db_atualizado : banco DEPOIS do merge
 
     Returns
     -------
@@ -31,7 +52,8 @@ def detectar_gaps(
         - periodo       : str  (ex: "2026-03")
         - dias_no_banco : int  (quantos dias únicos ficaram no banco)
         - dias_no_novo  : int  (quantos dias únicos vieram no arquivo novo)
-        - dias_ausentes : list[int]  (dias do mês que estavam no banco antigo mas sumiram)
+        - dias_faltando : int  (quantos dias sobraram só no banco)
+        - dias_ausentes : list[int]  (quais são esses dias)
     """
     gaps = []
 

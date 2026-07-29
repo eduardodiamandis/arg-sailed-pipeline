@@ -73,6 +73,7 @@ from argentina_etl.pipelines.sailed import (
     _cortar_apos_duas_linhas_vazias,
     ler_arquivo_novo,
     merge_com_banco,
+    remover_colunas_sem_nome,
 )
 from argentina_etl.storage.excel import salvar_local
 from argentina_etl.storage.onedrive import salvar_onedrive
@@ -138,6 +139,54 @@ class TestCortarAposDuasLinhasVazias(unittest.TestCase):
         df = _make_df([{"A": 1}, {"A": None}, {"A": 3}])
         result = _cortar_apos_duas_linhas_vazias(df)
         self.assertEqual(len(result), 3)
+
+
+class TestRemoverColunasSemNome(unittest.TestCase):
+
+    def _com_unnamed(self):
+        df = _sample_db()
+        for i in (13, 14, 18):
+            df[f"Unnamed: {i}"] = None
+        return df
+
+    def test_remove_as_colunas_sem_nome(self):
+        df = remover_colunas_sem_nome(self._com_unnamed())
+        self.assertEqual(
+            [c for c in df.columns if str(c).startswith("Unnamed:")], []
+        )
+
+    def test_preserva_as_colunas_de_verdade(self):
+        original = _sample_db()
+        df = remover_colunas_sem_nome(self._com_unnamed())
+        self.assertEqual(list(df.columns), list(original.columns))
+        self.assertEqual(len(df), len(original))
+
+    def test_sem_colunas_sem_nome_devolve_intacto(self):
+        original = _sample_db()
+        df = remover_colunas_sem_nome(original)
+        self.assertEqual(list(df.columns), list(original.columns))
+
+    def test_avisa_antes_de_descartar_coluna_com_conteudo(self):
+        """
+        O caso que importa: a 'Unnamed: 18' da base real escondia a anotacao
+        'ultima linha do banco do almyr'. Descartar em silencio seria perder
+        um dado que uma pessoa escreveu.
+        """
+        df = self._com_unnamed()
+        df.loc[df.index[0], "Unnamed: 18"] = "ultima linha do banco do almyr"
+
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            resultado = remover_colunas_sem_nome(df)
+
+        avisos = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+        self.assertIn("ultima linha do banco do almyr", avisos)
+        self.assertIn("Unnamed: 18", avisos)
+        self.assertNotIn("Unnamed: 18", resultado.columns)
+
+    def test_nao_avisa_quando_todas_estao_vazias(self):
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            remover_colunas_sem_nome(self._com_unnamed())
+        mock_logger.warning.assert_not_called()
 
 
 class TestLerArquivoNovo(unittest.TestCase):

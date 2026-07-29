@@ -47,7 +47,11 @@ from argentina_etl.config import (
     URL_SAILED,
     validar_config_graph,
 )
-from argentina_etl.pipelines.sailed import ler_arquivo_novo, merge_com_banco
+from argentina_etl.pipelines.sailed import (
+    ler_arquivo_novo,
+    merge_com_banco,
+    remover_colunas_sem_nome,
+)
 from argentina_etl.storage.excel import salvar_local
 from argentina_etl.storage.onedrive import salvar_onedrive, _forcar_sync_onedrive
 from argentina_etl.storage.sql_server import salvar_sql_server
@@ -148,8 +152,12 @@ def main() -> None:
 
     logger.info(f"Lendo banco: {PATH_DATABASE}")
     db = pd.read_excel(PATH_DATABASE)
+    # A base arrastava seis colunas 'Unnamed: 13'-'Unnamed: 18' vazias, criadas
+    # pelo Excel e reescritas a cada execucao porque o merge as carregava
+    # adiante. Sai aqui, na leitura, para nao voltarem pelo write-back.
+    db = remover_colunas_sem_nome(db)
     db["Date"] = pd.to_datetime(db["Date"])
-    logger.info(f"Banco carregado: {len(db)} linhas")
+    logger.info(f"Banco carregado: {len(db)} linhas, {len(db.columns)} colunas")
 
     # ------------------------------------------------------------------
     # 4. Merge

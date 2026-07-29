@@ -31,7 +31,21 @@ from argentina_etl.logging_setup import logger
 # Configurações do .env
 # ---------------------------------------------------------------------------
 
-_BACKEND: str        = os.getenv("EMAIL_BACKEND", "smtp").lower()
+def _primeira_palavra(valor: str, padrao: str) -> str:
+    """
+    Primeira palavra do valor, em minusculas.
+
+    O .env desta maquina trazia 'EMAIL_BACKEND=smtp   <- adicione essa linha':
+    o comentario colado no valor fazia _BACKEND nao ser igual nem a 'smtp' nem
+    a 'graph'. O envio continuou funcionando por acidente — _dispatch cai no
+    else — mas a dica de diagnostico de falha, que compara com 'smtp', ficou
+    morta. Ler so a primeira palavra torna o parsing imune a isso.
+    """
+    palavras = valor.strip().split()
+    return palavras[0].lower() if palavras else padrao
+
+
+_BACKEND: str        = _primeira_palavra(os.getenv("EMAIL_BACKEND", ""), "smtp")
 _SMTP_HOST: str      = os.getenv("EMAIL_SMTP_HOST", "smtp.gmail.com")
 _SMTP_PORT: int      = int(os.getenv("EMAIL_SMTP_PORT", "587"))
 _EMAIL_USER: str     = os.getenv("EMAIL_USER", "")
