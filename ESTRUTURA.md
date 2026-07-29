@@ -14,7 +14,7 @@
 > estrutura-alvo continuam valendo — muda o repositório onde são aplicados.
 > Ver [1.1](#11-a-descoberta-dois-repositórios-divergentes) e [8. Plano](#8-plano-de-migração).
 >
-> **Estado em 2026-07-29:** Fases 1, 2, A, B, C, D, E e F **concluídas**. Resta apenas
+> **Estado em 2026-07-29:** Fases 1, 2, A, B, C, D, E, F e I **concluídas**. Resta apenas
 > a Fase H, bloqueada por permissão externa. **As três decisões abertas (9.1, 9.2, 9.3)
 > resolvidas.**
 >
@@ -701,6 +701,25 @@ Fora do plano original da fase, mas parte dela: `docs/`, com o pedido de permiss
 Graph. Documento operacional não é nenhum dos quatro assuntos do princípio 5 — daí o
 diretório próprio.
 
+### ✅ Fase I — Suíte verde *(concluída em 2026-07-29)*
+
+Os dois testes que falhavam desde antes da migração foram consertados: **125 passando,
+nenhum falhando.** A suíte é a rede de segurança principal do projeto — dois testes
+vermelhos permanentes treinam quem executa a ignorar o resultado, e é exatamente assim
+que uma falha nova passa despercebida.
+
+**As duas causas eram do teste, não do código de produção.**
+
+| Teste | Causa real |
+|---|---|
+| `TestSalvarOnedrive::test_cria_cinco_sheets` | Mockava a gravação inteira, então o `.xlsx` nunca existia em disco — e `salvar_onedrive` passou a chamar `_forcar_sync_onedrive`, cujo `os.utime` estoura em arquivo inexistente. Corrigido mockando também as duas etapas de sincronização, que são assunto do `test_sync.py` |
+| `TestDownloadFile::test_salva_arquivo_com_nome_enriquecido` | **As asserções estavam fora do bloco `with tempfile.TemporaryDirectory()`.** Quando `result.exists()` rodava, o diretório de destino já tinha sido apagado pelo próprio context manager. O download funcionava o tempo todo |
+
+O segundo caso **não era o que a dívida registrada dizia** — a seção 10 atribuía as duas
+falhas à mesma origem. O `assertIn` do nome passava e só o `exists()` falhava, o que
+apontava para o arquivo, não para a indentação. Vale como lembrete: *dívida documentada
+descreve o sintoma da época, não necessariamente a causa.*
+
 ---
 
 ## 9. Decisões
@@ -799,11 +818,8 @@ Fora do escopo da migração, mas registrada para não se perder:
   sempre — foi a causa das 21 noites. Ele existe como registro histórico, em
   `C:\Users\server\_arquivo\Argentina-aposentado-2026-07-29`, tag
   `aposentado-2026-07-29`.
-- **2 testes falhando no `sailed_auto`, anteriores à migração** —
-  `TestSalvarOnedrive::test_cria_cinco_sheets` (o teste mocka `Path.mkdir`, mas
-  `salvar_onedrive` passou a chamar `_forcar_sync_onedrive`, cujo `os.utime` falha sem o
-  diretório) e `TestDownloadFile::test_salva_arquivo_com_nome_enriquecido`. Valeria consertar
-  agora que a suíte é a rede de segurança principal.
+- ~~**2 testes falhando no `sailed_auto`, anteriores à migração**~~ — ✅ **resolvido**
+  em 2026-07-29; ver [Fase I](#-fase-i--suíte-verde-concluída-em-2026-07-29).
 - **Tarefa agendada com `LogonType: Interactive`** — só roda com o usuário logado. O `S4U`
   (rodar sem login) foi negado por falta de elevação ao recriar a `new_sailed_task`. Se a
   máquina for deslogada, o pipeline não executa. Hoje isso é uma fragilidade **dupla**: a

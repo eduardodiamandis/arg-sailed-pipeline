@@ -46,10 +46,8 @@ geradas por automação COM; hoje são calculadas com pandas.
 pytest
 ```
 
-123 testes. Duas falhas conhecidas em `test_pipeline.py`
-(`TestSalvarOnedrive::test_cria_cinco_sheets` e
-`TestDownloadFile::test_salva_arquivo_com_nome_enriquecido`) são anteriores à
-reorganização e independentes — ver `ESTRUTURA.md`, seção 10.
+125 testes, todos passando. Nenhuma falha conhecida — se algum ficar vermelho,
+é sinal, não ruído.
 
 ---
 
@@ -81,7 +79,7 @@ sailed_auto/
 │   ├── reporting/report.py      relatório HTML por e-mail
 │   └── utils/files.py           utilitários
 │
-├── tests/                       123 testes
+├── tests/                       125 testes
 ├── sql/                         DDL e views
 ├── docs/                        documentos operacionais
 │

@@ -263,8 +263,13 @@ class TestSalvarOnedrive(unittest.TestCase):
         def fake_to_excel(self_df, writer, sheet_name=None, **kwargs):
             sheets_criadas.append(sheet_name)
 
+        # A gravacao inteira e mockada, entao o .xlsx nunca existe em disco. As
+        # duas etapas de sincronizacao tocam o arquivo real (os.utime) e sao
+        # assunto do test_sync.py — aqui o que se verifica e quais sheets saem.
         with patch("argentina_etl.storage.onedrive.pd.ExcelWriter", return_value=mock_writer), \
              patch("argentina_etl.storage.onedrive.Path.mkdir"), \
+             patch("argentina_etl.storage.onedrive._forcar_sync_onedrive"), \
+             patch("argentina_etl.storage.onedrive.verificar_sincronizacao"), \
              patch.object(pd.DataFrame, "to_excel", fake_to_excel):
             salvar_onedrive(df, Path("onedrive/test.xlsx"))
 
@@ -418,8 +423,10 @@ class TestDownloadFile(unittest.TestCase):
                     timeout=5,
                 )
 
-        self.assertIn("Sailed Vessels_2026-03-01", str(result))
-        self.assertTrue(result.exists())
+            # Dentro do with: o TemporaryDirectory apaga dest_tmp ao sair, e
+            # result.exists() daria False por isso, nao por falha do download.
+            self.assertIn("Sailed Vessels_2026-03-01", str(result))
+            self.assertTrue(result.exists())
 
     def test_levanta_erro_quando_download_nao_aparece(self):
         """Sem arquivos na pasta temp → TimeoutError após timeout curto."""

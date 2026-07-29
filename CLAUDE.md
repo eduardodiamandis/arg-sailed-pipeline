@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 python main.py          # or: python -m argentina_etl
-pytest                  # 123 tests
+pytest                  # 125 tests, all passing
 ```
 
 `main.py` at the root is a thin shim: it puts `src/` on the path and delegates to
@@ -14,9 +14,9 @@ pytest                  # 123 tests
 (which runs `python.exe main.py` with `WorkingDirectory` at the root) keeps working
 after the package reorganisation. Do not remove it.
 
-Two tests in `tests/test_pipeline.py` fail for reasons predating the reorganisation
-(`TestSalvarOnedrive::test_cria_cinco_sheets`,
-`TestDownloadFile::test_salva_arquivo_com_nome_enriquecido`). Everything else passes.
+The suite is green. It is the main safety net for this project — a failing test is a
+signal, never background noise. If one starts failing, fix it or explain it before
+moving on.
 
 ## Documentation
 
