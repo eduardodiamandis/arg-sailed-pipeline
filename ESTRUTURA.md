@@ -14,8 +14,9 @@
 > estrutura-alvo continuam valendo — muda o repositório onde são aplicados.
 > Ver [1.1](#11-a-descoberta-dois-repositórios-divergentes) e [8. Plano](#8-plano-de-migração).
 >
-> **Estado em 2026-07-28:** Fases 1, 2, A, B, C, D concluídas e E quase — falta apenas
-> arquivar esta pasta. **As três decisões abertas (9.1, 9.2, 9.3) resolvidas.**
+> **Estado em 2026-07-29:** Fases 1, 2, A, B, C, D, E e F **concluídas**. Resta apenas
+> a Fase H, bloqueada por permissão externa. **As três decisões abertas (9.1, 9.2, 9.3)
+> resolvidas.**
 >
 > A produção está funcionando com **um** pipeline e **um** agendamento; os dados de junho
 > foram recuperados; a base voltou a avançar sozinha; o código está em
@@ -31,8 +32,12 @@
 > **aguardando concessão de permissão** (chamado aberto em 29/07).
 >
 > **Fase F concluída em 2026-07-29:** a documentação migrou para o `sailed_auto`,
-> que passa a ser o único repositório do projeto. Resta arquivar o
-> `Desktop\Argentina`, que agora não guarda nada de único.
+> que passa a ser o único repositório do projeto.
+>
+> **Fase E encerrada em 2026-07-29:** o `Desktop\Argentina` foi marcado com a tag
+> `aposentado-2026-07-29` e movido para
+> `C:\Users\server\_arquivo\Argentina-aposentado-2026-07-29`. Ele não guarda nada
+> de único e **não deve ser executado** — ver [seção 10](#10-dívida-técnica-conhecida).
 >
 > As referências a `Desktop\Argentina` ao longo deste documento são **históricas** —
 > descrevem de onde viemos, e devem permanecer.
@@ -328,9 +333,9 @@ nos dois repositórios. **Copiáveis sem alteração de código.**
 | `Database.merge_com_banco` (trava de segurança) | `database.py` | ✅ **portado** (`a18e1d7`) — ver 9.1 |
 | `lineup_processor.py` (~300 linhas) | `pipelines/lineup.py` | ✅ **portado** (`6b47363`), com 2 bugs corrigidos |
 | `validacao.py` (~110 linhas) | `validation.py` | ✅ **portado** (`b3dfad8`) + `validar_continuidade` nova |
-| `sql/` (6 arquivos) | `sql/` | pendente — ver Fase E |
-| `DOCUMENTACAO.md` | `ARQUITETURA.md` | pendente — ver Fase F |
-| `CLAUDE.md` | `CLAUDE.md` | pendente — ver Fase F |
+| `sql/` (6 arquivos) | `sql/` | ✅ **portado** (`bdf04a3`) — Fase E |
+| `DOCUMENTACAO.md` | `ARQUITETURA.md` | ✅ **portado** (`a401192`) — Fase F |
+| `CLAUDE.md` | `CLAUDE.md` | ✅ **portado** (`a401192`) — Fase F |
 | `harvest_arg_templete.html` | — | **não portar**: o `report.py` do `sailed_auto` tem HTML próprio |
 
 **Não portar:** `Test database.py`. Os 8 testes do `sailed_auto/test_database.py` têm nomes
@@ -344,11 +349,17 @@ idênticos e cobrem mais — os 7 daqui são subconjunto.
 > a função equivalente dos dois lados.** "Copiável sem alteração" descreve o arquivo
 > portado, não garante que o destino esteja pronto para recebê-lo.
 
-### 7.3 Deleções em `Desktop\Argentina` (ao arquivar)
+### 7.3 Código morto de `Desktop\Argentina` — **não apagado, arquivado junto**
 
 `concater.py`, `sailde.py`, `SQLmanager.py`, `teste_lineup_processor.py`, `texto.txt`,
-`run_argentina_etl_DEBUG.bat`. O git preserva tudo: `git show <commit>:<arquivo>` recupera
-qualquer um a qualquer momento.
+`run_argentina_etl_DEBUG.bat`.
+
+O plano previa apagá-los antes de arquivar. **Não foi o que aconteceu, e não faz falta:**
+a pasta inteira saiu de circulação de uma vez, então apagar arquivo por arquivo dentro de
+um repositório que ninguém mais executa seria trabalho sem efeito. Eles continuam lá,
+alcançáveis pela tag: `git show aposentado-2026-07-29:concater.py`.
+
+O que importava era não deixá-los no repositório **vivo** — e nenhum deles foi portado.
 
 ---
 
@@ -477,7 +488,7 @@ Os dados já estavam em `data/` desde a Fase 2, e o `sailed_auto` não tem `run_
 | 3 imports não migrados | Estavam **dentro** de funções de teste; a reescrita só casava início de linha |
 | `IndentationError` no `sql_server.py` | A última linha do `lineup.py` não tinha newline final, o `wc -l` reportou 340 em vez de 341 e a extração por intervalo perdeu um `conn.close()` |
 
-### Fase E — Aposentar `Desktop\Argentina` *(quase concluída em 2026-07-28)*
+### ✅ Fase E — Aposentar `Desktop\Argentina` *(concluída em 2026-07-29)*
 
 - [x] Tarefa `Argentina ETL Daily` **excluída** — passa a existir **um** pipeline
       e **um** agendamento
@@ -489,7 +500,23 @@ Os dados já estavam em `data/` desde a Fase 2, e o `sailed_auto` não tem `run_
 - [x] `logging_setup.py` desamarrado: `_DEFAULT_LOG_FILE` estava fixo em
       `Path.home()/"Desktop"/"Argentina"/"logs"`, o que prendia o `sailed_auto`
       ao repositório que ele veio substituir. Agora deriva da raiz do projeto
-- [ ] Tag + mover a pasta para fora do Desktop
+- [x] **Tag + mover a pasta para fora do Desktop** *(2026-07-29)* — commit final
+      `af68eea` ("Estado final antes do arquivamento"), tag `aposentado-2026-07-29`,
+      árvore de trabalho limpa. A pasta foi para
+      `C:\Users\server\_arquivo\Argentina-aposentado-2026-07-29`
+
+**Por que tag antes de mover.** A pasta continua sendo um repositório git completo, com
+remoto e 4 branches. A tag é o que permite responder *"como estava o código aposentado?"*
+sem depender de a pasta continuar existindo nesse caminho — `git show
+aposentado-2026-07-29:<arquivo>` recupera qualquer um dos arquivos deletados listados
+em [7.3](#73-deleções-em-desktopargentina-ao-arquivar).
+
+**Verificado após o arquivamento:** nenhuma tarefa agendada aponta para o caminho antigo
+(só a `new_sailed_task`, que roda no `sailed_auto`); nenhum caminho do `.env` referencia
+`Desktop\Argentina`; as menções que sobraram no código são comentários históricos
+(`logging_setup.py`, docstrings de `test_lineup.py` e `test_validation.py`) e devem
+permanecer. Suíte após o arquivamento: **123 passando, 2 falhando** — as duas já
+conhecidas e anteriores à migração.
 
 **Correção de um item da Fase D.** Aquela fase marcou *"mover dados para `data/`"*
 como não aplicável, alegando que já estavam lá desde a Fase 2 — **errado**: estavam
@@ -655,11 +682,24 @@ consome o `.xlsx` depende inteiramente dessa publicação, sem nenhum sinal de q
 dados estão velhos. É exatamente o formato de falha silenciosa que já custou 21 noites
 e 5 dias de dados neste projeto.
 
-### Fase F — Documentação
+### ✅ Fase F — Documentação *(concluída em 2026-07-29, `a401192`)*
 
-- [ ] Reescrever `README.md` (sem a árvore fictícia — problema #7, presente nos dois)
-- [ ] `ARQUITETURA.md` a partir do `DOCUMENTACAO.md`
-- [ ] Atualizar `CLAUDE.md`
+- [x] `README.md` reescrito — com a árvore **real**, o fluxo em 6 etapas e as regras que
+      não devem ser alteradas sem entender. O anterior descrevia um `src/config.py`,
+      `src/database.py` que nunca existiu: o problema #7 estava nos dois repositórios,
+      cada um inventando uma estrutura diferente
+- [x] `ARQUITETURA.md` escrito a partir do `DOCUMENTACAO.md` do repositório antigo
+- [x] `CLAUDE.md` atualizado para a estrutura de pacote
+- [x] `ESTRUTURA.md` (este) migrado — ele vivia no repositório que estávamos aposentando,
+      o que obrigava a alternar entre dois diretórios a cada sessão e já tinha causado um
+      `git add` no diretório errado
+- [x] `.env.example` criado — o projeto tinha **29 variáveis de ambiente e nenhum
+      template**, e `config.py` aborta em variável faltando. Não estava no plano da fase;
+      apareceu ao documentar a instalação
+
+Fora do plano original da fase, mas parte dela: `docs/`, com o pedido de permissão do
+Graph. Documento operacional não é nenhum dos quatro assuntos do princípio 5 — daí o
+diretório próprio.
 
 ---
 
@@ -751,18 +791,19 @@ Fora do escopo da migração, mas registrada para não se perder:
   navio que estava `EXPECTED` em 30/06 entraria como `WAITING`, porque seria classificado com
   o conhecimento de hoje. Decidir se vale o esforço — o Lineup é forward-looking e o valor
   histórico dele é menor que o do Sailed.
-- **`lineup_processor.py` e `Database.py` deste repo mantêm os bugs já corrigidos lá** —
-  o do `pd.NaT` e o do `NaN`/`pyodbc`. Somem ao arquivar (Fase E), mas não rode este
-  repositório esperando que funcione.
+- **O repositório aposentado não deve ser executado** — `lineup_processor.py` e
+  `Database.py` de lá mantêm três bugs corrigidos aqui: o do `pd.NaT`, o do
+  `NaN`/`pyodbc` e o do `DataFrame` vazio no `merge_com_banco` (o ramo "nenhum período
+  aceito" converte `Date` para dtype `object` e quebra o `.dt`; os 7 testes de lá nunca
+  cobriram "arquivo novo vazio"). Além disso, o downloader dele está quebrado desde
+  sempre — foi a causa das 21 noites. Ele existe como registro histórico, em
+  `C:\Users\server\_arquivo\Argentina-aposentado-2026-07-29`, tag
+  `aposentado-2026-07-29`.
 - **2 testes falhando no `sailed_auto`, anteriores à migração** —
   `TestSalvarOnedrive::test_cria_cinco_sheets` (o teste mocka `Path.mkdir`, mas
   `salvar_onedrive` passou a chamar `_forcar_sync_onedrive`, cujo `os.utime` falha sem o
   diretório) e `TestDownloadFile::test_salva_arquivo_com_nome_enriquecido`. Valeria consertar
   agora que a suíte é a rede de segurança principal.
-- **`Database.merge_com_banco` deste repo tem o bug do `DataFrame` vazio** — no ramo "nenhum
-  período aceito", o concat com um frame vazio converte `Date` para dtype `object` e quebra o
-  `.dt`. Já corrigido no `sailed_auto`; aqui permanece, porque os 7 testes locais não cobrem
-  "arquivo novo vazio". Some ao arquivar (Fase E), mas não rode este repo esperando que funcione.
 - **Tarefa agendada com `LogonType: Interactive`** — só roda com o usuário logado. O `S4U`
   (rodar sem login) foi negado por falta de elevação ao recriar a `new_sailed_task`. Se a
   máquina for deslogada, o pipeline não executa. Hoje isso é uma fragilidade **dupla**: a
@@ -778,9 +819,10 @@ Fora do escopo da migração, mas registrada para não se perder:
 - **`EMAIL_BACKEND` do `sailed_auto/.env`** contém texto de instrução colado no valor
   (`smtp         ← adicione essa linha`). Funciona, mas polui o log. Não corrigido para não
   arriscar a entrega de e-mail que está operando.
-- **Dois destinos de log concorrentes** — o `.bat` do repositório antigo escrevia
-  `argentina_etl_*.log` e o logger escreve `argentina_updater.log`. Some junto com a
-  `Argentina ETL Daily`, mas os arquivos antigos seguem em `logs/`.
+- **Logs antigos de outro produtor em `logs/`** — o `.bat` do repositório aposentado
+  escrevia `argentina_etl_*.log`; o logger daqui escreve `argentina_updater.log`. O
+  produtor sumiu com a `Argentina ETL Daily`, mas os arquivos antigos continuam na pasta
+  e confundem quem for procurar a execução de uma noite específica.
 - **`Arg_sailed_database.xlsx` tem 6 colunas `Unnamed: 13`–`Unnamed: 18`** vazias, reescritas
   a cada salvamento.
 - **Esquemas divergentes** — o banco principal tem `Port`/`Terminal`/`Vessel`/`Status`, mas
