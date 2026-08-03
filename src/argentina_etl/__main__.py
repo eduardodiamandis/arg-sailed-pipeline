@@ -34,6 +34,7 @@ from argentina_etl.config import (
     GRAPH_TENANT_ID,
     GRAPH_UPLOAD_ENABLED,
     LINEUP_FORCE_SNAPSHOT,
+    PATH_CORRECOES,
     PATH_DATABASE,
     PATH_DATABASE_OUTPUT,
     PATH_ONEDRIVE,
@@ -47,6 +48,7 @@ from argentina_etl.config import (
     URL_SAILED,
     validar_config_graph,
 )
+from argentina_etl.pipelines.correcoes import aplicar_correcoes, carregar_correcoes
 from argentina_etl.pipelines.sailed import (
     ler_arquivo_novo,
     merge_com_banco,
@@ -67,6 +69,7 @@ from argentina_etl.validation import (
     resumo_mes_corrente,
     validar_continuidade,
     validar_corte_rodape,
+    validar_tonelagem,
 )
 
 
@@ -171,6 +174,22 @@ def main() -> None:
 
     db_atualizado = merge_com_banco(df_novo, db)
 
+    # ------------------------------------------------------------------
+    # 4b. Correcoes conhecidas
+    # ------------------------------------------------------------------
+    # Reaplicadas a cada rodada, e nao consertadas a mao, porque tudo o que vem
+    # depois daqui e reescrito a partir deste DataFrame: a base, o Arg_Sailed
+    # (DELETE + INSERT total) e a planilha do OneDrive. Um conserto feito numa
+    # dessas pontas dura ate a madrugada seguinte. Ver ESTRUTURA.md, decisao 9.6.
+    #
+    # Vem depois do merge de proposito: se o NABSA republicar um mes ja
+    # corrigido, a substituicao em bloco traz o valor errado de volta e a
+    # correcao precisa acontecer depois dela, nao antes.
+    try:
+        db_atualizado = aplicar_correcoes(db_atualizado, carregar_correcoes(PATH_CORRECOES))
+    except Exception as e:
+        logger.error(f"Falha ao aplicar correcoes (ignorada): {e}")
+
     # Antes aqui se despejavam as ultimas 15 datas do banco. Uma lista crua
     # exige que alguem a leia e faca a conta de cabeca toda noite; o que
     # interessa e ate onde a base chegou e quanto falta para o mes fechar.
@@ -203,6 +222,15 @@ def main() -> None:
             logger.warning(
                 f"⚠️ {len(gaps)} periodo(s) com gaps — verifique o arquivo-fonte "
                 f"antes de confiar nos dados."
+            )
+
+        # Roda DEPOIS das correcoes: o caso ja conhecido nao deve alarmar toda
+        # noite. O que sobra aqui e caso novo, e por isso merece o e-mail.
+        impossiveis = validar_tonelagem(db_atualizado)
+        if impossiveis:
+            logger.warning(
+                f"⚠️ {len(impossiveis)} embarque(s) com tonelagem impossivel "
+                f"permanecem na base apos as correcoes."
             )
     except Exception as e:
         logger.error(f"Falha nas validacoes pos-merge (ignorada): {e}")

@@ -170,7 +170,9 @@ sailed_auto/
 │       │
 │       ├── reporting/
 │       │   ├── __init__.py
-│       │   └── report.py       # relatório HTML + envio SMTP
+│       │   ├── report.py       # relatório HTML + envio SMTP
+│       │   ├── dashboard.py    # gerador do dashboard HTML autocontido
+│       │   └── dashboard_template.html
 │       │
 │       └── utils/
 │           ├── __init__.py
@@ -877,6 +879,119 @@ nunca entrariam.
 **Impacto medido em produção: nenhum.** Com o arquivo do NABSA de hoje, 2026-07 tem
 547 linhas / 28 dias dos dois lados — aceito pelas duas regras. A trava nova só age no
 cenário que antes passava em silêncio.
+
+### 9.5 O dashboard achatado por uma linha impossível — ✅ **RESOLVIDO** *(2026-08-03)*
+
+Ao montar o dashboard HTML, a série mensal de 2018–2026 apareceu como uma linha
+quase reta com **um pico isolado de 60,6 Mt** em novembro de 2025, contra uma média
+de 9,2 Mt. Não era erro de agregação.
+
+**A causa.** Uma única linha da base:
+
+| Data | Navio | Carga | Destino | Tons |
+|---|---|---|---|---|
+| 20/11/2025 | EPIC RADIANCE | SOYBEANMEAL | TURKEY | **49.806.070,5** |
+
+Quase 50 milhões de toneladas num navio só. O maior graneleiro em operação carrega
+cerca de **400 mil**; o segundo maior carregamento de toda a base é 445 mil. A linha
+sozinha valia **5,3% das 942,9 Mt** do histórico inteiro.
+
+**O estrago não era só o pico.** Como todas as escalas derivam do máximo, aquela
+linha achatava tudo: o heatmap de sazonalidade ficava de um tom só (uma célula no
+topo da rampa, 102 espremidas na base), o mix de cargas por ano tinha 2025 fora de
+proporção, e SOYBEANMEAL aparecia com 281,1 Mt em vez de 231,3 Mt.
+
+**A resolução.** `LIMITE_TONELAGEM_NAVIO = 500_000` em `reporting/dashboard.py`.
+Linhas acima disso saem das agregações e vão inteiras para `payload.sailed.anomalias`,
+que a página exibe **em destaque no topo**, com navio, data, carga, destino e
+tonelagem.
+
+**Não é filtro de outlier estatístico, e a distinção importa.** O corte é físico —
+o que nenhum navio pode carregar — e não relativo à distribuição. Por isso o
+carregamento de 445 mil t de minério continua nos gráficos: é grande, não é
+impossível. Um corte estatístico (3σ, percentil 99) tiraria dados legítimos e
+mudaria de resultado a cada rodada.
+
+**Nada é descartado em silêncio** — esse era o requisito. O dado não some, muda de
+lugar: sai do gráfico, onde mentia sobre a escala, e vira um aviso que diz
+exatamente o que foi encontrado. `test_tonelagem_impossivel_e_exibida_e_nao_descartada`
+prende isso.
+
+**A correção real é na origem** — resolvida na [9.6](#96-corrigir-à-mão-não-gruda--resolvido-2026-08-03).
+A quarentena virou a **segunda** linha de defesa: o caso conhecido chega ao dashboard
+já corrigido, e o que ela pega agora é o caso *novo*, que ninguém ainda registrou.
+
+### 9.6 Corrigir à mão não gruda — ✅ **RESOLVIDO** *(2026-08-03)*
+
+Sequência da [9.5](#95-o-dashboard-achatado-por-uma-linha-impossível--resolvido-2026-08-03).
+O relato de quem opera: *"eu já tinha corrigido na mão, porém sempre volta"*.
+
+**Onde nasce.** No NABSA, não em casa. O arquivo bruto baixado em 02/12/2025
+(`vessels_sailed_update_Sailed Vessels_2025-12-02.xlsx`, linha 326) já traz
+`49806067.00`. Uma linha isolada num arquivo de 614; as vizinhas estão normais
+(46.598,47 / 7.700 / 21.890). Nosso parser está correto.
+
+**Por que voltava.** Tudo depois do merge é reescrito a partir do mesmo
+`db_atualizado`:
+
+| Onde a correção era feita | O que acontece na rodada seguinte |
+|---|---|
+| `Arg_Sailed` no SQL | `DELETE` + `INSERT` total a partir da base → **volta** |
+| Planilha do OneDrive | regerada a partir da base → **volta** |
+| `data/db/Arg_sailed_database.xlsx` | é a fonte de verdade → gruda, até o NABSA republicar o mês |
+
+E se o NABSA voltar a publicar novembro/2025, a substituição em bloco do merge
+(9.1/9.4) traz o valor errado de volta mesmo na base. **Nenhum ponto do sistema
+tornava uma correção permanente.**
+
+**A resolução.** `config/correcoes_sailed.csv`, versionado, aplicado por
+`pipelines/correcoes.py` como etapa 4b — depois do merge, antes da persistência.
+Sendo reaplicada a cada rodada, a correção alcança todos os destinos (base, SQL,
+OneDrive, dashboard, Power BI) e sobrevive tanto à reescrita quanto à
+substituição em bloco.
+
+**O valor errado faz parte da chave de casamento** — e essa é a decisão de
+projeto que importa. Uma regra só age quando data, navio, carga, destino **e o
+valor errado** batem todos. No dia em que a origem corrigir o dado, a regra deixa
+de casar sozinha e não faz nada, em vez de sobrescrever o valor certo com o nosso
+palpite. Regra que não casou vira WARNING: ou a origem consertou, ou a linha mudou
+de forma e a correção precisa ser revista. O arquivo não apodrece em silêncio.
+
+**O valor adotado: 49.806,07 t — erro de digitação na base do NABSA, confirmado
+pelo operador em 03/08/2026.** O valor publicado é o correto multiplicado por mil.
+
+A confirmação fechou o que a evidência já indicava: os dígitos batem exatamente com
+49.806,067 (ponto decimal deslocado em três casas); o valor cabe no perfil da carga
+(SOYBEANMEAL tem percentil 99 em 49.993 t, e o maior embarque já feito para a Turquia
+foi 51.508 t); e o próprio EPIC RADIANCE aparece em 22/09/2024 levando 35.305 t da
+mesma carga para a Espanha. Tudo registrado na coluna `motivo` do CSV — inclusive a
+distinção entre o que era inferência e o que passou a ser fato confirmado, porque
+daqui a dois anos ninguém lembra qual era qual.
+
+**Uma correção tem duas vidas, e confundi-las gera alarme falso diário.** Daí a
+coluna `modo`:
+
+| modo | Quando usar | Não casou | Casou |
+|---|---|---|---|
+| `aplicar` | a origem ainda publica o valor errado | **WARNING** — ou a origem consertou, ou a chave está errada | INFO, corrige |
+| `guarda` | o dado já foi consertado na base | silêncio: é o estado esperado | **WARNING** — regressão, a origem republicou o erro |
+
+Isto não é refinamento teórico. Em 03/08/2026, horas depois de a camada entrar no ar,
+o operador corrigiu a base à mão — e a regra passou a avisar "correção sem efeito"
+toda rodada. Num projeto onde os avisos vão para o e-mail, um alarme que sempre dispara
+treina quem lê a ignorar todos. A regra do EPIC RADIANCE está em `guarda` desde então:
+cala enquanto o dado estiver certo e grita se o erro voltar. Coluna opcional — arquivo
+sem ela se comporta como `aplicar`.
+
+**E uma validação para o próximo.** `validar_tonelagem` em `validation.py` sinaliza
+qualquer embarque acima do limite físico, no log e no e-mail. O erro do EPIC
+RADIANCE passou meses despercebido porque nenhuma validação olhava a **grandeza**
+dos valores: `detectar_gaps` conta dias, `validar_continuidade` compara bordas, e um
+número absurdo dentro de um dia que existe não viola nenhuma das duas. Roda depois
+das correções, para o caso conhecido não alarmar toda noite.
+
+**Efeito medido:** total do histórico de 942.869.139 t para 893.112.878 t;
+linhas impossíveis de 1 para 0; contagem de linhas inalterada em 47.023.
 
 ### Decisões ainda abertas
 

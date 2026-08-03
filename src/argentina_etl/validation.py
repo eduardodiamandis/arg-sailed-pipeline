@@ -229,6 +229,60 @@ def validar_continuidade(
     }
 
 
+# Tonelagem acima da qual um embarque nao pode ser real. O maior graneleiro em
+# operacao carrega ~400 mil toneladas, entao meio milhao ja e impossivel para um
+# navio so. Corte FISICO, nao estatistico: um corte por desvio-padrao ou
+# percentil marcaria embarques legitimos e mudaria de resultado a cada rodada.
+LIMITE_TONELAGEM_NAVIO = 500_000
+
+
+def validar_tonelagem(df: pd.DataFrame) -> list[dict]:
+    """
+    Embarques com tonelagem fisicamente impossivel.
+
+    Existe por causa do EPIC RADIANCE (20/11/2025): o NABSA publicou 49.806.067 t
+    numa linha so — 5,3% de todo o historico de oito anos. O erro passou meses
+    sem ser notado porque nenhuma validacao olhava para a grandeza dos valores:
+    `detectar_gaps` conta dias, `validar_continuidade` compara bordas, e um
+    numero absurdo dentro de um dia que existe nao viola nenhuma das duas.
+
+    Como todas as escalas de grafico derivam do maximo, uma linha dessas achata
+    tudo de uma vez — serie mensal, sazonalidade e mix de cargas juntos.
+
+    Informa, nao levanta: validacao neste projeto nunca derruba o pipeline. O
+    conserto do caso ja conhecido mora em config/correcoes_sailed.csv; esta
+    funcao existe para o **proximo**, que ninguem ainda viu.
+    """
+    if df.empty or "Tons" not in df.columns:
+        return []
+
+    tons = pd.to_numeric(df["Tons"], errors="coerce")
+    suspeitas = df[tons > LIMITE_TONELAGEM_NAVIO]
+    if suspeitas.empty:
+        return []
+
+    achados = []
+    for registro in suspeitas.itertuples(index=False):
+        achado = {
+            "data": getattr(registro, "Date", None),
+            "navio": getattr(registro, "Vessel", None),
+            "carga": getattr(registro, "Cargo", None),
+            "destino": getattr(registro, "Destination", None),
+            "tons": float(registro.Tons),
+        }
+        achados.append(achado)
+        data = achado["data"]
+        data_txt = data.strftime("%d/%m/%Y") if hasattr(data, "strftime") else str(data)
+        logger.warning(
+            f"⚠️ Tonelagem impossivel: {achado['tons']:,.2f} t em {data_txt} "
+            f"({achado['navio'] or 'navio nao informado'}, {achado['carga'] or '?'} "
+            f"-> {achado['destino'] or '?'}). Acima do limite fisico de "
+            f"{LIMITE_TONELAGEM_NAVIO:,} t por navio. Confira na origem e, se "
+            f"confirmado, registre em config/correcoes_sailed.csv."
+        )
+    return achados
+
+
 def validar_corte_rodape(df: pd.DataFrame, path_original: str = "") -> None:
     """
     Validação extra: verifica se o DataFrame resultante do corte de rodapé

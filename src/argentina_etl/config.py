@@ -66,6 +66,27 @@ LINEUP_FORCE_SNAPSHOT: bool = _flag("LINEUP_FORCE_SNAPSHOT", "true")
 TIMEOUT_SAILED: int = int(os.getenv("TIMEOUT_SAILED", "40"))
 TIMEOUT_LINEUP: int = int(os.getenv("TIMEOUT_LINEUP", "18"))
 
+# --- Correcoes conhecidas do Sailed ---
+# Arquivo versionado no repositorio (nao e dado gerado, e regra revisavel).
+# Sem _require: nao ter correcao nenhuma e o estado normal, e o modulo devolve
+# tabela vazia quando o arquivo nao existe.
+PATH_CORRECOES: Path = Path(
+    os.getenv("PATH_CORRECOES", "").strip()
+    or _ROOT / "config" / "correcoes_sailed.csv"
+)
+
+# --- Dashboard HTML ---
+# Arquivo unico e autocontido gerado por reporting/dashboard.py, feito para ser
+# embutido em outra aplicacao via iframe.
+#
+# Nao usa _require de proposito, pela mesma razao das variaveis do Graph: o
+# dashboard e opcional e nao faz parte do pipeline noturno. Uma variavel ausente
+# nao pode impedir o pipeline de subir, entao cai no padrao sob data/.
+PATH_DASHBOARD_OUTPUT: Path = Path(
+    os.getenv("PATH_DASHBOARD_OUTPUT", "").strip()
+    or _ROOT / "data" / "dashboard" / "arg_dashboard.html"
+)
+
 # --- SharePoint via Microsoft Graph (Fase H) ---
 # Publicacao com confirmacao de entrega, em substituicao a pasta sincronizada
 # pelo cliente do OneDrive. Ver ESTRUTURA.md, Fase H.

@@ -21,8 +21,10 @@ import pytest
 from datetime import date
 
 from argentina_etl.validation import (
+    LIMITE_TONELAGEM_NAVIO,
     detectar_gaps,
     resumo_mes_corrente,
+    validar_tonelagem,
     validar_continuidade,
     validar_corte_rodape,
 )
@@ -191,3 +193,53 @@ def test_resumo_ignora_outros_meses_e_anos():
     r = resumo_mes_corrente(base, hoje=date(2026, 7, 20))
     assert r["ultimo_dia"] == 10
     assert r["dias_com_dados"] == 1
+
+
+# ---------------------------------------------------------------------------
+# validar_tonelagem
+# ---------------------------------------------------------------------------
+#
+# Escrita a partir do EPIC RADIANCE (20/11/2025): o NABSA publicou 49.806.067 t
+# numa linha so, 5,3% de todo o historico de oito anos, e o erro passou meses
+# sem ser notado. Nenhuma validacao existente podia pega-lo — detectar_gaps
+# conta dias e validar_continuidade compara bordas; um valor absurdo dentro de
+# um dia que existe nao viola nenhuma das duas.
+
+def _embarques(tons: list[float]) -> pd.DataFrame:
+    return pd.DataFrame({
+        "Date": pd.to_datetime(["2025-11-20"] * len(tons)),
+        "Vessel": [f"NAVIO_{i}" for i in range(len(tons))],
+        "Cargo": ["SOYBEANMEAL"] * len(tons),
+        "Destination": ["TURKEY"] * len(tons),
+        "Tons": tons,
+    })
+
+
+def test_tonelagem_impossivel_e_reportada():
+    achados = validar_tonelagem(_embarques([49_806_067.0, 30_000.0]))
+    assert len(achados) == 1
+    assert achados[0]["tons"] == pytest.approx(49_806_067.0)
+    assert achados[0]["navio"] == "NAVIO_0"
+
+
+def test_carga_grande_porem_possivel_nao_alarma():
+    """445 mil t de minerio e grande, nao e impossivel — nao pode virar ruido."""
+    assert validar_tonelagem(_embarques([445_202.0])) == []
+
+
+def test_valor_exatamente_no_limite_nao_alarma():
+    assert validar_tonelagem(_embarques([float(LIMITE_TONELAGEM_NAVIO)])) == []
+
+
+def test_base_normal_nao_produz_achado():
+    assert validar_tonelagem(_embarques([30_000.0, 42_000.0, 18_500.0])) == []
+
+
+def test_base_vazia_nao_quebra():
+    assert validar_tonelagem(pd.DataFrame()) == []
+
+
+def test_tonelagem_nao_numerica_nao_quebra():
+    df = _embarques([30_000.0])
+    df["Tons"] = ["nao e numero"]
+    assert validar_tonelagem(df) == []

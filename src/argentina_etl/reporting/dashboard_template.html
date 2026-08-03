@@ -1,0 +1,1350 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argentina — Sailed &amp; Line-Up</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Tokens. Tudo que muda entre claro e escuro mora aqui; o resto da folha usa
+   papeis (--serie-1, --tinta-2) e nunca hex cru.
+   --------------------------------------------------------------------------- */
+.raiz {
+  color-scheme: light;
+  --plano:        #f9f9f7;
+  --superficie:   #fcfcfb;
+  --tinta-1:      #0b0b0b;
+  --tinta-2:      #52514e;
+  --tinta-3:      #898781;
+  --grade:        #e1e0d9;
+  --eixo:         #c3c2b7;
+  --borda:        rgba(11,11,11,.10);
+  --realce:       rgba(11,11,11,.04);
+
+  --serie-1: #2a78d6; --serie-2: #eb6834; --serie-3: #1baf7a;
+  --serie-4: #eda100; --serie-5: #e87ba4; --serie-6: #008300;
+  --serie-x: #898781;
+
+  /* Ordinal EXPECTED -> WAITING -> LOADING: a fila avanca, a cor escurece. */
+  --ord-1: #86b6ef; --ord-2: #3987e5; --ord-3: #1c5cab; --ord-0: #898781;
+
+  /* Sequencial: uma matiz, claro -> escuro. */
+  --seq-0:#cde2fb; --seq-1:#9ec5f4; --seq-2:#6da7ec; --seq-3:#3987e5;
+  --seq-4:#256abf; --seq-5:#184f95; --seq-6:#0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .raiz {
+    color-scheme: dark;
+    --plano:#0d0d0d; --superficie:#1a1a19;
+    --tinta-1:#ffffff; --tinta-2:#c3c2b7; --tinta-3:#898781;
+    --grade:#2c2c2a; --eixo:#383835;
+    --borda:rgba(255,255,255,.10); --realce:rgba(255,255,255,.05);
+    --serie-1:#3987e5; --serie-2:#d95926; --serie-3:#199e70;
+    --serie-4:#c98500; --serie-5:#d55181; --serie-6:#008300;
+    --ord-1:#9ec5f4; --ord-2:#5598e7; --ord-3:#256abf;
+    --seq-0:#104281; --seq-1:#184f95; --seq-2:#256abf; --seq-3:#3987e5;
+    --seq-4:#5598e7; --seq-5:#86b6ef; --seq-6:#cde2fb;
+  }
+}
+:root[data-theme="dark"] .raiz {
+  color-scheme: dark;
+  --plano:#0d0d0d; --superficie:#1a1a19;
+  --tinta-1:#ffffff; --tinta-2:#c3c2b7; --tinta-3:#898781;
+  --grade:#2c2c2a; --eixo:#383835;
+  --borda:rgba(255,255,255,.10); --realce:rgba(255,255,255,.05);
+  --serie-1:#3987e5; --serie-2:#d95926; --serie-3:#199e70;
+  --serie-4:#c98500; --serie-5:#d55181; --serie-6:#008300;
+  --ord-1:#9ec5f4; --ord-2:#5598e7; --ord-3:#256abf;
+  --seq-0:#104281; --seq-1:#184f95; --seq-2:#256abf; --seq-3:#3987e5;
+  --seq-4:#5598e7; --seq-5:#86b6ef; --seq-6:#cde2fb;
+}
+
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+.raiz {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--plano); color: var(--tinta-1);
+  min-height: 100vh; font-size: 14px; line-height: 1.45;
+}
+
+/* --- Cabecalho ---------------------------------------------------------- */
+.topo {
+  display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+  flex-wrap:wrap; padding:20px 24px 0;
+}
+.topo h1 { font-size:17px; font-weight:600; margin:0; letter-spacing:-.01em; }
+.topo .meta { font-size:12px; color:var(--tinta-3); }
+
+/* --- Abas (as duas paginas) --------------------------------------------- */
+.abas { display:flex; gap:4px; padding:14px 24px 0; border-bottom:1px solid var(--borda); }
+.aba {
+  appearance:none; border:0; background:none; cursor:pointer; font:inherit;
+  font-size:13px; font-weight:500; color:var(--tinta-2);
+  padding:9px 14px; border-radius:7px 7px 0 0; position:relative; top:1px;
+  border-bottom:2px solid transparent;
+}
+.aba:hover { background:var(--realce); }
+.aba[aria-selected="true"] { color:var(--tinta-1); border-bottom-color:var(--serie-1); font-weight:600; }
+.aba:focus-visible { outline:2px solid var(--serie-1); outline-offset:2px; }
+
+/* --- Linha de filtros: uma so, acima de tudo que ela reescopa ----------- */
+.filtros {
+  display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+  padding:16px 24px 4px;
+}
+.campo { display:flex; flex-direction:column; gap:4px; }
+.campo > label { font-size:11px; color:var(--tinta-3); text-transform:uppercase; letter-spacing:.04em; }
+.campo select, .campo input {
+  font:inherit; font-size:13px; padding:6px 9px; border-radius:7px;
+  border:1px solid var(--borda); background:var(--superficie); color:var(--tinta-1);
+  min-width:130px;
+}
+.campo select:focus-visible, .campo input:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.limpar {
+  appearance:none; font:inherit; font-size:12px; cursor:pointer; color:var(--tinta-2);
+  background:none; border:1px solid var(--borda); border-radius:7px; padding:6px 11px;
+}
+.limpar:hover { background:var(--realce); }
+
+/* --- Layout F -----------------------------------------------------------
+   Barra de KPIs no topo (primeira varredura), grafico largo abaixo (segunda
+   varredura), e a haste vertical a esquerda com os rankings.
+   ------------------------------------------------------------------------ */
+.pagina { padding:8px 24px 32px; display:none; }
+.pagina.ativa { display:block; }
+
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:12px 0 16px; }
+.corpo-f { display:grid; grid-template-columns:minmax(0,320px) minmax(0,1fr); gap:16px; align-items:start; }
+.haste { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.detalhe { display:flex; flex-direction:column; gap:16px; min-width:0; }
+@media (max-width: 900px) { .corpo-f { grid-template-columns:minmax(0,1fr); } }
+
+/* --- Cartoes ------------------------------------------------------------ */
+.cartao {
+  background:var(--superficie); border:1px solid var(--borda); border-radius:11px;
+  padding:15px 17px; min-width:0;
+}
+.cartao > header { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:2px; }
+.cartao h2 { font-size:13px; font-weight:600; margin:0; }
+.cartao .sub { font-size:11.5px; color:var(--tinta-3); margin:0 0 10px; }
+
+/* Ficha de indicador */
+.ficha .rotulo { font-size:11px; color:var(--tinta-3); text-transform:uppercase; letter-spacing:.04em; }
+.ficha .valor { font-size:25px; font-weight:600; margin-top:3px; letter-spacing:-.02em; }
+.ficha .heroi { font-size:48px; font-weight:600; line-height:1.05; letter-spacing:-.03em; }
+.ficha .nota { font-size:11.5px; color:var(--tinta-2); margin-top:2px; }
+
+/* Alternador tabela/grafico — a via de acesso sem cor e sem hover */
+.alt {
+  appearance:none; font:inherit; font-size:11px; cursor:pointer; color:var(--tinta-2);
+  background:none; border:1px solid var(--borda); border-radius:6px; padding:2px 8px;
+  white-space:nowrap;
+}
+.alt:hover { background:var(--realce); }
+.alt:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+
+/* --- Legenda ------------------------------------------------------------ */
+.legenda { display:flex; flex-wrap:wrap; gap:6px 15px; margin-top:9px; font-size:11.5px; color:var(--tinta-2); }
+.legenda span { display:inline-flex; align-items:center; gap:6px; }
+.chave { width:11px; height:11px; border-radius:3px; flex:none; }
+.chave.traco { width:15px; height:2px; border-radius:2px; }
+
+/* --- Tabelas ------------------------------------------------------------ */
+.rolagem { overflow-x:auto; max-height:420px; overflow-y:auto; }
+table { border-collapse:collapse; width:100%; font-size:12px; }
+th, td { padding:6px 9px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--grade); }
+th {
+  color:var(--tinta-3); font-weight:600; font-size:10.5px; text-transform:uppercase;
+  letter-spacing:.04em; position:sticky; top:0; background:var(--superficie); z-index:1;
+}
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+tbody tr:hover td { background:var(--realce); }
+
+/* --- SVG ---------------------------------------------------------------- */
+svg { display:block; width:100%; overflow:visible; }
+.rotulo-eixo { font-size:10.5px; fill:var(--tinta-3); font-variant-numeric:tabular-nums; }
+.rotulo-cat  { font-size:11.5px; fill:var(--tinta-2); }
+.rotulo-val  { font-size:11px; fill:var(--tinta-2); font-variant-numeric:tabular-nums; }
+.linha-grade { stroke:var(--grade); stroke-width:1; }
+.linha-eixo  { stroke:var(--eixo);  stroke-width:1; }
+.alvo { fill:transparent; cursor:default; }
+
+/* --- Dica (tooltip) ----------------------------------------------------- */
+#dica {
+  position:fixed; z-index:50; pointer-events:none; opacity:0; transition:opacity .1s;
+  background:var(--superficie); border:1px solid var(--borda); border-radius:9px;
+  padding:9px 11px; font-size:12px; color:var(--tinta-2);
+  box-shadow:0 4px 18px rgba(0,0,0,.13); max-width:290px;
+}
+#dica.on { opacity:1; }
+#dica .cab { font-weight:600; color:var(--tinta-1); margin-bottom:5px; font-size:12px; }
+#dica .li { display:flex; align-items:center; gap:7px; margin-top:3px; }
+#dica .li b { color:var(--tinta-1); font-variant-numeric:tabular-nums; }
+#dica .li i { font-style:normal; color:var(--tinta-2); }
+
+/* Aviso de qualidade de dado. Cor de status nunca aparece sozinha — vem sempre
+   com icone e texto, porque a matiz por si so nao carrega significado. */
+.aviso {
+  display:flex; gap:11px; align-items:flex-start;
+  background:var(--superficie); border:1px solid var(--borda);
+  border-left:3px solid #ec835a; border-radius:11px;
+  padding:13px 16px; margin:12px 0 0;
+}
+.aviso .icone { font-size:15px; line-height:1.3; flex:none; }
+.aviso h3 { margin:0 0 3px; font-size:12.5px; font-weight:600; color:var(--tinta-1); }
+.aviso p  { margin:0; font-size:12px; color:var(--tinta-2); }
+.aviso ul { margin:6px 0 0; padding-left:17px; font-size:12px; color:var(--tinta-2); }
+.aviso li { margin-top:2px; }
+.aviso b  { color:var(--tinta-1); font-variant-numeric:tabular-nums; }
+
+.vazio { color:var(--tinta-3); font-size:12.5px; padding:22px 0; text-align:center; }
+.oculto { display:none !important; }
+.rodape { padding:0 24px 26px; font-size:11px; color:var(--tinta-3); }
+</style>
+</head>
+<body>
+<div class="raiz">
+
+  <div class="topo">
+    <div>
+      <h1>Argentina — Sailed &amp; Line-Up</h1>
+      <div class="meta" id="meta-periodo"></div>
+    </div>
+    <div class="meta" id="meta-gerado"></div>
+  </div>
+
+  <div class="abas" role="tablist">
+    <button class="aba" role="tab" id="aba-op"   aria-selected="false" aria-controls="pg-op">Operacional — Line-Up</button>
+    <button class="aba" role="tab" id="aba-hist" aria-selected="true"  aria-controls="pg-hist">Histórico — Sailed</button>
+  </div>
+
+  <!-- ===================== PÁGINA 1 — OPERACIONAL ===================== -->
+  <section class="pagina" id="pg-op" role="tabpanel" aria-labelledby="aba-op">
+    <div class="filtros">
+      <div class="campo">
+        <label for="f-porto">Porto</label>
+        <select id="f-porto"></select>
+      </div>
+      <div class="campo">
+        <label for="f-status">Status</label>
+        <select id="f-status"></select>
+      </div>
+      <div class="campo">
+        <label for="f-commodity">Carga</label>
+        <select id="f-commodity"></select>
+      </div>
+      <div class="campo">
+        <label for="f-busca">Buscar navio / terminal</label>
+        <input type="text" id="f-busca" placeholder="ex.: RENOVA" autocomplete="off">
+      </div>
+      <button class="limpar" id="f-limpar-op">Limpar</button>
+    </div>
+
+    <div class="kpis" id="kpis-op"></div>
+
+    <!-- Segunda varredura do F: atravessa a largura toda, como a série na
+         página histórica. -->
+    <div class="cartao" id="c-portos-op" style="margin-bottom:16px"></div>
+
+    <div class="corpo-f">
+      <div class="haste">
+        <div class="cartao" id="c-terminais-op"></div>
+        <div class="cartao" id="c-commodities-op"></div>
+      </div>
+      <div class="detalhe">
+        <div class="cartao" id="c-fila-hist"></div>
+        <div class="cartao" id="c-navios"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PÁGINA 2 — HISTÓRICO ======================= -->
+  <section class="pagina ativa" id="pg-hist" role="tabpanel" aria-labelledby="aba-hist">
+    <div class="filtros">
+      <div class="campo">
+        <label for="f-ano-ini">Ano inicial</label>
+        <select id="f-ano-ini"></select>
+      </div>
+      <div class="campo">
+        <label for="f-ano-fim">Ano final</label>
+        <select id="f-ano-fim"></select>
+      </div>
+      <div class="campo">
+        <label for="f-mes">Mês</label>
+        <select id="f-mes"></select>
+      </div>
+      <div class="campo">
+        <label for="f-carga">Carga</label>
+        <select id="f-carga"></select>
+      </div>
+      <button class="limpar" id="f-limpar-hist">Limpar</button>
+    </div>
+
+    <div id="aviso-anomalia"></div>
+
+    <div class="kpis" id="kpis-hist"></div>
+
+    <div class="cartao" id="c-serie" style="margin-bottom:16px"></div>
+
+    <div class="corpo-f">
+      <div class="haste">
+        <div class="cartao" id="c-cargas"></div>
+        <div class="cartao" id="c-destinos"></div>
+        <div class="cartao" id="c-terminais"></div>
+      </div>
+      <div class="detalhe">
+        <div class="cartao" id="c-mix"></div>
+        <div class="cartao" id="c-sazon"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="rodape" id="rodape"></div>
+</div>
+
+<div id="dica" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const DADOS = /*__PAYLOAD__*/;
+
+/* ===========================================================================
+   Utilidades
+   =========================================================================== */
+const nf  = new Intl.NumberFormat('pt-BR');
+const nf1 = new Intl.NumberFormat('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+
+/** Tonelagem legivel: Mt acima de um milhao, kt acima de mil. */
+function fmtT(v) {
+  if (v == null || isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e6) return nf1.format(v/1e6) + ' Mt';
+  if (a >= 1e3) return nf.format(Math.round(v/1e3)) + ' kt';
+  return nf.format(Math.round(v)) + ' t';
+}
+function fmtN(v) { return v == null || isNaN(v) ? '—' : nf.format(v); }
+function fmtData(iso) {
+  if (!iso) return '—';
+  const p = String(iso).slice(0,10).split('-');
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const NOME_MES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// Rotulo do balde de cauda longa criado no Python. Nao e uma entidade: nao pode
+// disputar posicao num ranking de destinos nem virar uma serie do mix.
+const RESIDUO = 'OUTROS';
+
+/**
+ * Corta rotulo que nao cabe na calha, com reticencia.
+ * Rotulo cortado pelo proprio desenho e pior que rotulo curto — o nome inteiro
+ * continua na dica e na tabela.
+ */
+function cortar(txt, larguraPx) {
+  const s = String(txt == null ? '—' : txt);
+  const max = Math.max(6, Math.floor((larguraPx - 10) / 6.15));
+  return s.length <= max ? s : s.slice(0, max - 1) + '…';
+}
+
+/** Cria elemento SVG. */
+function sv(tag, attrs) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  return e;
+}
+/** Elemento HTML; texto sempre via textContent (rotulos sao dados nao confiaveis). */
+function el(tag, cls, txt) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+/**
+ * Escala de ticks redondos, do zero ate um teto que SEMPRE cobre o maximo.
+ *
+ * O arredondamento para cima nao e detalhe: parando no ultimo tick <= max, um
+ * maximo de 12,8 com passo 5 daria teto 10, e a marca de 12,8 seria desenhada
+ * fora da area do grafico (o svg tem overflow visivel) — por cima do subtitulo,
+ * com o eixo declarando uma escala menor do que a que esta desenhada.
+ *
+ * A guarda de passo finito evita laco infinito com max nao numerico.
+ */
+function ticks(max, alvo) {
+  if (!(max > 0) || !isFinite(max)) return [0];
+  const bruto = max / (alvo || 4);
+  const mag = Math.pow(10, Math.floor(Math.log10(bruto)));
+  const passo = [1,2,2.5,5,10].map(m => m*mag).find(p => p >= bruto) || 10*mag;
+  if (!isFinite(passo) || passo <= 0) return [0, max];
+  const teto = Math.ceil(max/passo) * passo;
+  const out = [];
+  for (let v = 0; v <= teto + passo*1e-9; v += passo) out.push(v);
+  return out;
+}
+function larguraDe(host, padrao) {
+  const w = host.clientWidth;
+  return w > 40 ? w : (padrao || 520);
+}
+
+/* --- Dica ---------------------------------------------------------------- */
+const DICA = document.getElementById('dica');
+function mostrarDica(ev, titulo, itens) {
+  DICA.textContent = '';
+  DICA.appendChild(el('div','cab',titulo));
+  (itens || []).forEach(it => {
+    const li = el('div','li');
+    if (it.cor) {
+      const c = el('span','chave' + (it.traco ? ' traco' : ''));
+      c.style.background = it.cor;
+      li.appendChild(c);
+    }
+    const b = el('b', null, it.valor);
+    li.appendChild(b);
+    if (it.nome) li.appendChild(el('i', null, it.nome));
+    DICA.appendChild(li);
+  });
+  DICA.classList.add('on');
+  posDica(ev);
+}
+function posDica(ev) {
+  const r = DICA.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width  > window.innerWidth  - 8) x = ev.clientX - r.width  - 14;
+  if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - 14;
+  DICA.style.left = Math.max(8, x) + 'px';
+  DICA.style.top  = Math.max(8, y) + 'px';
+}
+function esconderDica() { DICA.classList.remove('on'); }
+
+/* --- Cartao: cabecalho + alternador grafico/tabela ------------------------ */
+/**
+ * Monta um cartao com titulo, botao "Tabela" e dois paineis irmaos.
+ * O painel de tabela nao e enfeite: e a via de leitura sem cor, exigida pelos
+ * tons claros da paleta que ficam abaixo de 3:1 no fundo claro.
+ */
+function cartao(host, titulo, sub) {
+  host.textContent = '';
+  const head = el('header');
+  head.appendChild(el('h2', null, titulo));
+  const bt = el('button','alt','Tabela');
+  bt.type = 'button';
+  head.appendChild(bt);
+  host.appendChild(head);
+  if (sub) host.appendChild(el('p','sub',sub));
+
+  const graf = el('div','painel-graf');
+  const tab  = el('div','painel-tab oculto');
+  host.appendChild(graf); host.appendChild(tab);
+
+  bt.addEventListener('click', () => {
+    const mostrandoTabela = !tab.classList.contains('oculto');
+    tab.classList.toggle('oculto', mostrandoTabela);
+    graf.classList.toggle('oculto', !mostrandoTabela);
+    bt.textContent = mostrandoTabela ? 'Tabela' : 'Gráfico';
+  });
+  return { graf, tab };
+}
+
+/** Tabela simples a partir de colunas e linhas. */
+function tabela(host, colunas, linhas) {
+  host.textContent = '';
+  if (!linhas.length) { host.appendChild(el('div','vazio','Sem dados no filtro atual.')); return; }
+  const wrap = el('div','rolagem');
+  const t = el('table');
+  const thead = el('thead'), tr = el('tr');
+  colunas.forEach(c => {
+    const th = el('th', c.num ? 'num' : null, c.rotulo);
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr); t.appendChild(thead);
+  const tb = el('tbody');
+  linhas.forEach(l => {
+    const r = el('tr');
+    colunas.forEach((c,i) => r.appendChild(el('td', c.num ? 'num' : null, l[i])));
+    tb.appendChild(r);
+  });
+  t.appendChild(tb); wrap.appendChild(t); host.appendChild(wrap);
+}
+
+function legenda(host, itens) {
+  const lg = el('div','legenda');
+  itens.forEach(it => {
+    const s = el('span');
+    const c = el('span','chave' + (it.traco ? ' traco' : ''));
+    c.style.background = it.cor;
+    s.appendChild(c);
+    s.appendChild(el('span', null, it.nome));
+    lg.appendChild(s);
+  });
+  host.appendChild(lg);
+}
+function vazio(host, msg) {
+  host.textContent = '';
+  host.appendChild(el('div','vazio', msg || 'Sem dados no filtro atual.'));
+}
+
+/* ===========================================================================
+   Gráficos
+   =========================================================================== */
+
+/**
+ * Barras horizontais, uma serie, uma cor.
+ * Categorias nominais nunca ganham rampa de valor — isso duplicaria o
+ * comprimento da barra na matiz e gastaria o unico canal livre.
+ */
+function barrasH(host, dados, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (!dados.length) { vazio(host); return; }
+
+  const W = larguraDe(host, 300);
+  const linhaAlt = 26, esqLarg = Math.min(140, Math.max(84, W*0.42));
+  const dirLarg = 62, alt = dados.length * linhaAlt + 6;
+  const plotW = Math.max(30, W - esqLarg - dirLarg);
+  const max = Math.max(...dados.map(d => d.valor)) || 1;
+  const cor = opc.cor || 'var(--serie-1)';
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${alt}`, height:alt, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Gráfico de barras');
+
+  dados.forEach((d, i) => {
+    const y = i * linhaAlt, h = Math.min(18, linhaAlt - 9);
+    const cy = y + (linhaAlt - h)/2;
+    const larg = Math.max(1.5, (d.valor / max) * plotW);
+
+    const rot = sv('text', {x: esqLarg - 9, y: y + linhaAlt/2 + 4, 'text-anchor':'end', class:'rotulo-cat'});
+    rot.textContent = cortar(d.nome, esqLarg);
+    s.appendChild(rot);
+
+    // Ponta arredondada no fim do dado, quadrada na linha de base.
+    const r = Math.min(4, larg/2);
+    const cam = sv('path', {d:
+      `M${esqLarg},${cy} H${esqLarg+larg-r} a${r},${r} 0 0 1 ${r},${r} V${cy+h-r} a${r},${r} 0 0 1 -${r},${r} H${esqLarg} Z`});
+    cam.style.fill = d.cor || cor;
+    s.appendChild(cam);
+
+    const val = sv('text', {x: esqLarg + larg + 7, y: y + linhaAlt/2 + 4, class:'rotulo-val'});
+    val.textContent = opc.fmt ? opc.fmt(d.valor) : fmtT(d.valor);
+    s.appendChild(val);
+
+    // Alvo de clique/hover cobrindo a faixa inteira, nao so os pixels pintados.
+    const alvo = sv('rect', {x:0, y:y, width:W, height:linhaAlt, class:'alvo'});
+    alvo.addEventListener('pointerenter', ev => mostrarDica(ev, d.nome, [
+      {cor: d.cor || cor, valor: (opc.fmt ? opc.fmt(d.valor) : fmtT(d.valor)), nome: opc.unidade || ''},
+      d.extra ? {valor: d.extra, nome:''} : null
+    ].filter(Boolean)));
+    alvo.addEventListener('pointermove', posDica);
+    alvo.addEventListener('pointerleave', esconderDica);
+    s.appendChild(alvo);
+  });
+  host.appendChild(s);
+}
+
+/** Série temporal — uma linha, crosshair que trava no ponto mais proximo. */
+function linhaTempo(host, pontos, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (pontos.length < 2) { vazio(host, 'Período curto demais para uma série.'); return; }
+
+  const W = larguraDe(host, 700), H = opc.altura || 210;
+  const m = {t:12, r:16, b:26, l:56};
+  const pw = Math.max(30, W - m.l - m.r), ph = H - m.t - m.b;
+  const max = Math.max(...pontos.map(p => p.valor)) || 1;
+  const tk = ticks(max, 4), topo = tk[tk.length-1] || max;
+
+  const X = i => m.l + (pontos.length === 1 ? pw/2 : (i/(pontos.length-1))*pw);
+  const Y = v => m.t + ph - (v/topo)*ph;
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Série temporal');
+
+  tk.forEach(v => {
+    s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:Y(v), y2:Y(v), class:'linha-grade'}));
+    const t = sv('text', {x:m.l-9, y:Y(v)+4, 'text-anchor':'end', class:'rotulo-eixo'});
+    t.textContent = fmtT(v);
+    s.appendChild(t);
+  });
+  s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:m.t+ph, y2:m.t+ph, class:'linha-eixo'}));
+
+  // Rotulos de X espacados para nao colidirem.
+  const passo = Math.max(1, Math.ceil(pontos.length/9));
+  pontos.forEach((p,i) => {
+    if (i % passo && i !== pontos.length-1) return;
+    const t = sv('text', {x:X(i), y:H-7, 'text-anchor':'middle', class:'rotulo-eixo'});
+    t.textContent = p.rotulo;
+    s.appendChild(t);
+  });
+
+  const d = pontos.map((p,i) => `${i?'L':'M'}${X(i).toFixed(1)},${Y(p.valor).toFixed(1)}`).join(' ');
+  const area = sv('path', {d: `${d} L${X(pontos.length-1)},${m.t+ph} L${X(0)},${m.t+ph} Z`});
+  area.style.fill = 'var(--serie-1)'; area.style.opacity = '.10';
+  s.appendChild(area);
+
+  const ln = sv('path', {d, fill:'none', 'stroke-width':2, 'stroke-linejoin':'round', 'stroke-linecap':'round'});
+  ln.style.stroke = 'var(--serie-1)';
+  s.appendChild(ln);
+
+  // Rotulo direto so no extremo — nunca um numero em cada ponto.
+  let iMax = 0; pontos.forEach((p,i) => { if (p.valor > pontos[iMax].valor) iMax = i; });
+  const pico = sv('circle', {cx:X(iMax), cy:Y(pontos[iMax].valor), r:4.5, 'stroke-width':2});
+  pico.style.fill = 'var(--serie-1)'; pico.style.stroke = 'var(--superficie)';
+  s.appendChild(pico);
+  const lp = sv('text', {x:X(iMax), y:Y(pontos[iMax].valor)-11, 'text-anchor':'middle', class:'rotulo-val'});
+  lp.textContent = fmtT(pontos[iMax].valor);
+  s.appendChild(lp);
+
+  const cross = sv('line', {x1:0,x2:0,y1:m.t,y2:m.t+ph, class:'linha-eixo', opacity:0});
+  s.appendChild(cross);
+  const foco = sv('circle', {r:4.5, 'stroke-width':2, opacity:0});
+  foco.style.fill = 'var(--serie-1)'; foco.style.stroke = 'var(--superficie)';
+  s.appendChild(foco);
+
+  const capt = sv('rect', {x:m.l, y:m.t, width:pw, height:ph, class:'alvo'});
+  capt.addEventListener('pointermove', ev => {
+    const cx = ev.clientX - s.getBoundingClientRect().left;
+    const escala = W / s.getBoundingClientRect().width;
+    const rel = (cx*escala - m.l)/pw;
+    const i = Math.max(0, Math.min(pontos.length-1, Math.round(rel*(pontos.length-1))));
+    const p = pontos[i];
+    cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('opacity', 1);
+    foco.setAttribute('cx', X(i)); foco.setAttribute('cy', Y(p.valor)); foco.setAttribute('opacity', 1);
+    mostrarDica(ev, p.rotuloLongo || p.rotulo, [
+      {cor:'var(--serie-1)', traco:true, valor: fmtT(p.valor), nome:'embarcado'},
+      p.n != null ? {valor: fmtN(p.n), nome:'embarques'} : null
+    ].filter(Boolean));
+  });
+  capt.addEventListener('pointerleave', () => {
+    cross.setAttribute('opacity',0); foco.setAttribute('opacity',0); esconderDica();
+  });
+  s.appendChild(capt);
+  host.appendChild(s);
+}
+
+/**
+ * Barras horizontais empilhadas.
+ * Separacao entre segmentos por vao de 2px na cor da superficie — nunca por
+ * contorno, que adicionaria tinta com peso de dado.
+ */
+function empilhadaH(host, linhas, series, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (!linhas.length) { vazio(host); return; }
+
+  const W = larguraDe(host, 620);
+  const linhaAlt = 30, esqLarg = Math.min(150, Math.max(96, W*0.26)), dirLarg = 66;
+  const alt = linhas.length * linhaAlt + 6;
+  const plotW = Math.max(30, W - esqLarg - dirLarg);
+  const max = Math.max(...linhas.map(l => l.total)) || 1;
+  const VAO = 2;
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${alt}`, height:alt, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Barras empilhadas');
+
+  linhas.forEach((l, i) => {
+    const y = i*linhaAlt, h = Math.min(19, linhaAlt-11), cy = y + (linhaAlt-h)/2;
+    const rot = sv('text', {x:esqLarg-9, y:y+linhaAlt/2+4, 'text-anchor':'end', class:'rotulo-cat'});
+    rot.textContent = cortar(l.nome, esqLarg);
+    s.appendChild(rot);
+
+    let x = esqLarg;
+    series.forEach(se => {
+      const v = l.valores[se.chave] || 0;
+      if (v <= 0) return;
+      const larg = Math.max(1, (v/max)*plotW);
+      const seg = sv('rect', {x, y:cy, width:larg, height:h, rx:1.5});
+      seg.style.fill = se.cor;
+      seg.addEventListener('pointerenter', ev => mostrarDica(ev, l.nome, [
+        {cor:se.cor, valor: fmtT(v), nome: se.nome},
+        {valor: fmtT(l.total), nome:'total do porto'}
+      ]));
+      seg.addEventListener('pointermove', posDica);
+      seg.addEventListener('pointerleave', esconderDica);
+      s.appendChild(seg);
+      x += larg + VAO;
+    });
+
+    const tot = sv('text', {x: Math.min(W-4, x+6), y:y+linhaAlt/2+4, class:'rotulo-val'});
+    tot.textContent = fmtT(l.total);
+    s.appendChild(tot);
+  });
+  host.appendChild(s);
+  legenda(host, series.map(se => ({cor:se.cor, nome:se.nome})));
+}
+
+/** Colunas empilhadas por ano — mix categórico. */
+function empilhadaV(host, colunas, series, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (!colunas.length) { vazio(host); return; }
+
+  const W = larguraDe(host, 560), H = opc.altura || 235;
+  const m = {t:12, r:12, b:26, l:56};
+  const pw = Math.max(30, W-m.l-m.r), ph = H-m.t-m.b;
+  const max = Math.max(...colunas.map(c => c.total)) || 1;
+  const tk = ticks(max, 4), topo = tk[tk.length-1] || max;
+  const banda = pw / colunas.length;
+  const larg = Math.min(24, banda*0.6);
+  const VAO = 2;
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Colunas empilhadas');
+
+  tk.forEach(v => {
+    const y = m.t+ph-(v/topo)*ph;
+    s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:y, y2:y, class:'linha-grade'}));
+    const t = sv('text', {x:m.l-9, y:y+4, 'text-anchor':'end', class:'rotulo-eixo'});
+    t.textContent = fmtT(v);
+    s.appendChild(t);
+  });
+  s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:m.t+ph, y2:m.t+ph, class:'linha-eixo'}));
+
+  colunas.forEach((c, i) => {
+    const cx = m.l + banda*i + banda/2;
+    let y = m.t + ph;
+    series.forEach(se => {
+      const v = c.valores[se.chave] || 0;
+      if (v <= 0) return;
+      const h = Math.max(1, (v/topo)*ph);
+      y -= h;
+      const seg = sv('rect', {x:cx-larg/2, y, width:larg, height:Math.max(1,h-VAO), rx:1.5});
+      seg.style.fill = se.cor;
+      seg.addEventListener('pointerenter', ev => mostrarDica(ev, `${c.nome} · ${se.nome}`, [
+        {cor:se.cor, valor: fmtT(v), nome:'embarcado'},
+        {valor: (c.total ? (v/c.total*100).toFixed(1).replace('.',',') : '0') + '%', nome:'do ano'}
+      ]));
+      seg.addEventListener('pointermove', posDica);
+      seg.addEventListener('pointerleave', esconderDica);
+      s.appendChild(seg);
+      y -= VAO;
+    });
+    const t = sv('text', {x:cx, y:H-7, 'text-anchor':'middle', class:'rotulo-eixo'});
+    t.textContent = c.nome;
+    s.appendChild(t);
+  });
+  host.appendChild(s);
+  legenda(host, series.map(se => ({cor:se.cor, nome:se.nome})));
+}
+
+/** Heatmap ano × mês — magnitude contínua, uma matiz. */
+function heatmap(host, matriz, anos, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (!anos.length) { vazio(host); return; }
+
+  const W = larguraDe(host, 560);
+  const esqLarg = 42, linhaAlt = 25, topoAlt = 18;
+  const cellW = Math.max(14, (W - esqLarg - 4)/12);
+  const H = anos.length*linhaAlt + topoAlt + 6;
+  const RAMPA = ['var(--seq-0)','var(--seq-1)','var(--seq-2)','var(--seq-3)','var(--seq-4)','var(--seq-5)','var(--seq-6)'];
+
+  let max = 0;
+  anos.forEach(a => MESES.forEach((_,mi) => { const v = (matriz[a]||{})[mi+1] || 0; if (v > max) max = v; }));
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Mapa de calor por ano e mês');
+
+  MESES.forEach((mn, mi) => {
+    const t = sv('text', {x: esqLarg + cellW*mi + cellW/2, y: 12, 'text-anchor':'middle', class:'rotulo-eixo'});
+    t.textContent = mn;
+    s.appendChild(t);
+  });
+
+  anos.forEach((a, ai) => {
+    const y = topoAlt + ai*linhaAlt;
+    const rt = sv('text', {x: esqLarg-9, y: y+linhaAlt/2+4, 'text-anchor':'end', class:'rotulo-eixo'});
+    rt.textContent = a;
+    s.appendChild(rt);
+
+    MESES.forEach((mn, mi) => {
+      const v = (matriz[a]||{})[mi+1] || 0;
+      const x = esqLarg + cellW*mi;
+      const cel = sv('rect', {x:x+1, y:y+2, width:Math.max(1,cellW-3), height:linhaAlt-5, rx:3});
+      if (v <= 0) {
+        cel.style.fill = 'var(--grade)';
+        cel.style.opacity = '.5';
+      } else {
+        const passo = Math.min(RAMPA.length-1, Math.floor((v/max)*RAMPA.length));
+        cel.style.fill = RAMPA[passo];
+      }
+      cel.addEventListener('pointerenter', ev => mostrarDica(ev, `${mn}/${a}`, [
+        {valor: v > 0 ? fmtT(v) : 'sem embarque', nome: v > 0 ? 'embarcado' : ''}
+      ]));
+      cel.addEventListener('pointermove', posDica);
+      cel.addEventListener('pointerleave', esconderDica);
+      s.appendChild(cel);
+    });
+  });
+  host.appendChild(s);
+
+  // Escala — obrigatoria: sem ela a cor sozinha nao diz magnitude.
+  const esc = el('div','legenda');
+  esc.appendChild(el('span', null, '0'));
+  RAMPA.forEach(c => {
+    const q = el('span','chave'); q.style.background = c; q.style.borderRadius = '2px';
+    esc.appendChild(q);
+  });
+  esc.appendChild(el('span', null, fmtT(max)));
+  host.appendChild(esc);
+}
+
+/** Colunas simples — usado no histórico de snapshots do Line-Up. */
+function colunas(host, dados, opc) {
+  opc = opc || {};
+  host.textContent = '';
+  if (!dados.length) { vazio(host); return; }
+
+  const W = larguraDe(host, 560), H = opc.altura || 165;
+  const m = {t:12, r:12, b:26, l:56};
+  const pw = Math.max(30, W-m.l-m.r), ph = H-m.t-m.b;
+  const max = Math.max(...dados.map(d => d.valor)) || 1;
+  const tk = ticks(max, 3), topo = tk[tk.length-1] || max;
+  const banda = pw/dados.length, larg = Math.min(24, banda*0.55);
+
+  const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
+  s.setAttribute('aria-label', opc.titulo || 'Colunas');
+
+  tk.forEach(v => {
+    const y = m.t+ph-(v/topo)*ph;
+    s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:y, y2:y, class:'linha-grade'}));
+    const t = sv('text', {x:m.l-9, y:y+4, 'text-anchor':'end', class:'rotulo-eixo'});
+    t.textContent = fmtT(v);
+    s.appendChild(t);
+  });
+  s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:m.t+ph, y2:m.t+ph, class:'linha-eixo'}));
+
+  dados.forEach((d,i) => {
+    const cx = m.l + banda*i + banda/2;
+    const h = Math.max(1.5, (d.valor/topo)*ph), y = m.t+ph-h;
+    const r = Math.min(4, larg/2);
+    const cam = sv('path', {d:
+      `M${cx-larg/2},${m.t+ph} V${y+r} a${r},${r} 0 0 1 ${r},-${r} H${cx+larg/2-r} a${r},${r} 0 0 1 ${r},${r} V${m.t+ph} Z`});
+    cam.style.fill = 'var(--serie-1)';
+    s.appendChild(cam);
+
+    const alvo = sv('rect', {x:cx-banda/2, y:m.t, width:banda, height:ph, class:'alvo'});
+    alvo.addEventListener('pointerenter', ev => mostrarDica(ev, d.rotuloLongo || d.rotulo, [
+      {cor:'var(--serie-1)', valor: fmtT(d.valor), nome:'na fila'},
+      d.n != null ? {valor: fmtN(d.n), nome:'navios'} : null
+    ].filter(Boolean)));
+    alvo.addEventListener('pointermove', posDica);
+    alvo.addEventListener('pointerleave', esconderDica);
+    s.appendChild(alvo);
+
+    const t = sv('text', {x:cx, y:H-7, 'text-anchor':'middle', class:'rotulo-eixo'});
+    t.textContent = d.rotulo;
+    s.appendChild(t);
+  });
+  host.appendChild(s);
+}
+
+/** Fichas de indicador. */
+function fichas(host, itens) {
+  host.textContent = '';
+  itens.forEach(it => {
+    const c = el('div','cartao ficha');
+    c.appendChild(el('div','rotulo', it.rotulo));
+    c.appendChild(el('div', it.heroi ? 'valor heroi' : 'valor', it.valor));
+    if (it.nota) c.appendChild(el('div','nota', it.nota));
+    host.appendChild(c);
+  });
+}
+
+/* ===========================================================================
+   Página 2 — Histórico (Sailed)
+   =========================================================================== */
+const S = DADOS.sailed;
+// mes = '__TODOS__' ou 1..12. Filtra o mes DO ANO (todo marco de 2018 a 2026),
+// nao um recorte de calendario — e o corte que responde perguntas de
+// sazonalidade, que e o assunto desta pagina.
+const estadoH = {anoIni:null, anoFim:null, mes:'__TODOS__', carga:'__TODAS__'};
+
+const CAT = ['var(--serie-1)','var(--serie-2)','var(--serie-3)','var(--serie-4)','var(--serie-5)','var(--serie-6)'];
+
+function iniciarFiltrosHist() {
+  const anos = S.anos || [];
+  if (!anos.length) return;
+  estadoH.anoIni = anos[0];
+  estadoH.anoFim = anos[anos.length-1];
+
+  const selIni = document.getElementById('f-ano-ini');
+  const selFim = document.getElementById('f-ano-fim');
+  anos.forEach(a => {
+    selIni.appendChild(new Option(a, a));
+    selFim.appendChild(new Option(a, a));
+  });
+  selIni.value = estadoH.anoIni; selFim.value = estadoH.anoFim;
+
+  const selM = document.getElementById('f-mes');
+  selM.appendChild(new Option('Todos os meses', '__TODOS__'));
+  MESES.forEach((nome, i) => selM.appendChild(new Option(NOME_MES[i], String(i + 1))));
+
+  const selC = document.getElementById('f-carga');
+  selC.appendChild(new Option('Todas as cargas', '__TODAS__'));
+  (S.dims.cargas || []).forEach((c,i) => selC.appendChild(new Option(c, String(i))));
+
+  selIni.addEventListener('change', () => {
+    estadoH.anoIni = +selIni.value;
+    if (estadoH.anoIni > estadoH.anoFim) { estadoH.anoFim = estadoH.anoIni; selFim.value = estadoH.anoFim; }
+    renderHist();
+  });
+  selFim.addEventListener('change', () => {
+    estadoH.anoFim = +selFim.value;
+    if (estadoH.anoFim < estadoH.anoIni) { estadoH.anoIni = estadoH.anoFim; selIni.value = estadoH.anoIni; }
+    renderHist();
+  });
+  selM.addEventListener('change', () => { estadoH.mes = selM.value; renderHist(); });
+  selC.addEventListener('change', () => { estadoH.carga = selC.value; renderHist(); });
+  document.getElementById('f-limpar-hist').addEventListener('click', () => {
+    estadoH.anoIni = anos[0]; estadoH.anoFim = anos[anos.length-1];
+    estadoH.mes = '__TODOS__'; estadoH.carga = '__TODAS__';
+    selIni.value = estadoH.anoIni; selFim.value = estadoH.anoFim;
+    selM.value = '__TODOS__'; selC.value = '__TODAS__';
+    renderHist();
+  });
+}
+
+/**
+ * true se a linha da tabela-fato passa no filtro.
+ *
+ * As duas tabelas-fato tem o mesmo prefixo de chaves (ano, mes, carga), entao a
+ * mesma funcao serve as duas e os graficos nao podem divergir de recorte.
+ */
+function passaH(ano, mes, iCarga) {
+  if (ano < estadoH.anoIni || ano > estadoH.anoFim) return false;
+  if (estadoH.mes !== '__TODOS__' && mes !== +estadoH.mes) return false;
+  if (estadoH.carga !== '__TODAS__' && iCarga !== +estadoH.carga) return false;
+  return true;
+}
+
+/**
+ * Aviso das tonelagens impossiveis retiradas das agregacoes.
+ * Fica no topo da pagina, nomeando navio, data e tonelagem: o dado nao some,
+ * ele muda de lugar — do grafico, onde achatava a escala, para um aviso que diz
+ * exatamente o que foi encontrado.
+ */
+function renderAviso() {
+  const host = document.getElementById('aviso-anomalia');
+  host.textContent = '';
+  const anomalias = S.anomalias || [];
+  if (!anomalias.length) return;
+
+  const soma = anomalias.reduce((s,a) => s + (a.tons||0), 0);
+  const caixa = el('div','aviso');
+  caixa.appendChild(el('div','icone','⚠'));
+  const corpo = el('div');
+  corpo.appendChild(el('h3', null,
+    `${anomalias.length} embarque(s) com tonelagem impossível, fora dos gráficos`));
+  corpo.appendChild(el('p', null,
+    `Acima do limite de ${fmtT(S.limiteTonelagem)} por navio — o maior graneleiro em ` +
+    `operação carrega cerca de 400 kt. Somam ${fmtT(soma)} e achatavam a escala de ` +
+    `todos os gráficos. Corrija na origem (NABSA) ou na base.`));
+  const lista = el('ul');
+  anomalias.slice(0,5).forEach(a => {
+    const li = el('li');
+    li.appendChild(el('b', null, fmtT(a.tons)));
+    li.appendChild(document.createTextNode(
+      ` — ${a.navio || 'navio não informado'}, ${fmtData(a.data)}` +
+      `${a.carga ? ', ' + a.carga : ''}${a.destino ? ' → ' + a.destino : ''}`));
+    lista.appendChild(li);
+  });
+  corpo.appendChild(lista);
+  caixa.appendChild(corpo);
+  host.appendChild(caixa);
+}
+
+function renderHist() {
+  const dims = S.dims;
+  renderAviso();
+  // fatoMes: [ano, mes, iCarga, iDestino, tons, n]
+  const porMes = new Map(), porDestino = new Map(), porCarga = new Map();
+  const porAnoCarga = new Map(), sazon = {};
+  let totTons = 0, totN = 0;
+
+  (S.fatoMes || []).forEach(r => {
+    const [ano, mes, ic, id, t, n] = r;
+    if (!passaH(ano, mes, ic)) return;
+    totTons += t; totN += n;
+
+    const k = ano*100 + mes;
+    const m = porMes.get(k) || {t:0, n:0}; m.t += t; m.n += n; porMes.set(k, m);
+
+    porDestino.set(id, (porDestino.get(id)||0) + t);
+    porCarga.set(ic, (porCarga.get(ic)||0) + t);
+
+    if (!sazon[ano]) sazon[ano] = {};
+    sazon[ano][mes] = (sazon[ano][mes]||0) + t;
+
+    const ka = ano + '|' + ic;
+    porAnoCarga.set(ka, (porAnoCarga.get(ka)||0) + t);
+  });
+
+  const nMeses = porMes.size;
+  const anosNoFiltro = [];
+  for (let a = estadoH.anoIni; a <= estadoH.anoFim; a++) if (sazon[a]) anosNoFiltro.push(a);
+
+  /* --- Rankings: o balde OUTROS fica de fora ---
+     Ele nao e um destino nem um terminal, e como carrega a soma de toda a
+     cauda longa chegaria em primeiro lugar e diria nada. */
+  const topo = (mapa, rotulos, n) => [...mapa.entries()]
+    .map(([i,v]) => ({nome: rotulos[i] || '—', valor: v}))
+    .filter(d => d.nome !== RESIDUO)
+    .sort((a,b)=>b.valor-a.valor).slice(0,n);
+
+  /* --- KPIs ---
+     Nada de "destinos ativos" a partir de porDestino.size: ali so existem os
+     15 mantidos mais o balde. As contagens reais vem do Python, ja calculadas
+     sobre a base inteira — e por isso so valem sem filtro. */
+  const semFiltro = estadoH.carga === '__TODAS__' && estadoH.mes === '__TODOS__'
+    && estadoH.anoIni === S.anos[0] && estadoH.anoFim === S.anos[S.anos.length-1];
+
+  // Descreve o recorte ativo em texto, para os KPIs nao mentirem sobre o que
+  // estao somando.
+  const recorte = [`${estadoH.anoIni}–${estadoH.anoFim}`];
+  if (estadoH.mes !== '__TODOS__') recorte.push(NOME_MES[+estadoH.mes - 1]);
+  if (estadoH.carga !== '__TODAS__') recorte.push(dims.cargas[+estadoH.carga]);
+  const liderDestino = topo(porDestino, dims.destinos, 1)[0];
+  let pico = null;
+  porMes.forEach((v,k) => { if (!pico || v.t > pico.t) pico = {t:v.t, k}; });
+
+  fichas(document.getElementById('kpis-hist'), [
+    {rotulo:'Total embarcado', valor: fmtT(totTons), heroi:true, nota: recorte.join(' · ')},
+    {rotulo:'Embarques', valor: fmtN(totN)},
+    {rotulo: estadoH.mes === '__TODOS__' ? 'Média mensal' : 'Média por ano',
+     valor: nMeses ? fmtT(totTons/nMeses) : '—',
+     nota: `${nMeses} ${estadoH.mes === '__TODOS__' ? 'meses' : 'ocorrências'} com registro`},
+    {rotulo:'Maior destino', valor: liderDestino ? fmtT(liderDestino.valor) : '—',
+     nota: liderDestino ? liderDestino.nome : ''},
+    {rotulo:'Pico mensal', valor: pico ? fmtT(pico.t) : '—',
+     nota: pico ? `${MESES[(pico.k%100)-1]}/${Math.floor(pico.k/100)}` : ''},
+    {rotulo:'Destinos distintos', valor: semFiltro ? fmtN((S.totais||{}).destinos) : '—',
+     nota: semFiltro ? 'no período completo' : 'apenas sem filtro'}
+  ]);
+
+  /* --- Série mensal (o grafico largo, segunda varredura do F) --- */
+  const chaves = [...porMes.keys()].sort((a,b)=>a-b);
+  const pontos = chaves.map(k => {
+    const ano = Math.floor(k/100), mes = k%100, v = porMes.get(k);
+    return {rotulo: `${MESES[mes-1]}/${String(ano).slice(2)}`,
+            rotuloLongo: `${MESES[mes-1]}/${ano}`, valor: v.t, n: v.n};
+  });
+  // Com um mes fixado o grafico deixa de ser "por mes" e passa a ser aquele mes
+  // ano a ano. O titulo tem que acompanhar, senao descreve outra coisa.
+  const umMes = estadoH.mes !== '__TODOS__';
+  const tituloSerie = umMes
+    ? `Volume embarcado em ${NOME_MES[+estadoH.mes - 1]}, ano a ano`
+    : 'Volume embarcado por mês';
+  const cSerie = cartao(document.getElementById('c-serie'), tituloSerie,
+    `${pontos.length} ${umMes ? 'anos' : 'meses'} · pico destacado no gráfico`);
+  linhaTempo(cSerie.graf, pontos, {altura:210, titulo:tituloSerie});
+  tabela(cSerie.tab, [{rotulo:'Mês'},{rotulo:'Toneladas',num:true},{rotulo:'Embarques',num:true}],
+    pontos.map(p => [p.rotuloLongo, fmtT(p.valor), fmtN(p.n)]));
+
+  /* --- Haste vertical do F: os tres rankings --- */
+  const cCargas = cartao(document.getElementById('c-cargas'), 'Cargas por volume', 'Top 8');
+  const dCargas = topo(porCarga, dims.cargas, 8);
+  barrasH(cCargas.graf, dCargas, {titulo:'Cargas por volume'});
+  tabela(cCargas.tab, [{rotulo:'Carga'},{rotulo:'Toneladas',num:true}],
+    dCargas.map(d => [d.nome, fmtT(d.valor)]));
+
+  const cDest = cartao(document.getElementById('c-destinos'), 'Destinos por volume', 'Top 10');
+  const dDest = topo(porDestino, dims.destinos, 10);
+  barrasH(cDest.graf, dDest, {titulo:'Destinos por volume'});
+  tabela(cDest.tab, [{rotulo:'Destino'},{rotulo:'Toneladas',num:true}],
+    dDest.map(d => [d.nome, fmtT(d.valor)]));
+
+  // fatoTerminal: [ano, mes, iCarga, iTerminal, tons, n]
+  const porTerm = new Map();
+  (S.fatoTerminal || []).forEach(r => {
+    const [ano, mes, ic, it, t] = r;
+    if (!passaH(ano, mes, ic)) return;
+    porTerm.set(it, (porTerm.get(it)||0) + t);
+  });
+  const cTerm = cartao(document.getElementById('c-terminais'), 'Terminais por volume', 'Top 10');
+  const dTerm = topo(porTerm, dims.terminais, 10);
+  barrasH(cTerm.graf, dTerm, {titulo:'Terminais por volume'});
+  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Toneladas',num:true}],
+    dTerm.map(d => [d.nome, fmtT(d.valor)]));
+
+  /* --- Mix de cargas por ano ---
+     O balde OUTROS do Python nao entra como serie nomeada: ele ja e um resto, e
+     ao lado de um "Outras" criado aqui daria duas fatias cinzentas com nomes
+     quase iguais. Os dois viram a mesma faixa residual. */
+  const iResiduo = dims.cargas.indexOf(RESIDUO);
+  const ranking = [...porCarga.entries()]
+    .filter(([i]) => i !== iResiduo)
+    .sort((a,b)=>b[1]-a[1]);
+  const principais = ranking.slice(0,5).map(([i]) => i);
+  const temResto = ranking.length > 5 || porCarga.has(iResiduo);
+  const series = principais.map((i,k) => ({chave:String(i), nome:dims.cargas[i], cor:CAT[k]}));
+  if (temResto) series.push({chave:'__x__', nome:'Demais cargas', cor:'var(--serie-x)'});
+
+  const colsMix = anosNoFiltro.map(a => {
+    const valores = {}; let total = 0;
+    porAnoCarga.forEach((v, k) => {
+      const [ka, kc] = k.split('|');
+      if (+ka !== a) return;
+      total += v;
+      const chave = principais.includes(+kc) ? String(kc) : '__x__';
+      valores[chave] = (valores[chave]||0) + v;
+    });
+    return {nome:String(a), valores, total};
+  });
+  const cMix = cartao(document.getElementById('c-mix'), 'Mix de cargas por ano',
+    'Cinco maiores cargas do período; o restante agrupado');
+  empilhadaV(cMix.graf, colsMix, series, {altura:235, titulo:'Mix de cargas por ano'});
+  tabela(cMix.tab,
+    [{rotulo:'Ano'}].concat(series.map(s => ({rotulo:s.nome, num:true}))).concat([{rotulo:'Total',num:true}]),
+    colsMix.map(c => [c.nome].concat(series.map(s => fmtT(c.valores[s.chave]||0))).concat([fmtT(c.total)])));
+
+  /* --- Sazonalidade --- */
+  // Sem "mais escuro, mais volume": a rampa se inverte entre os modos — no
+  // fundo escuro a celula mais CLARA e a de maior volume. Quem diz o sentido e
+  // a escala desenhada sob o gráfico, que vai de 0 ao máximo.
+  // Sazonalidade compara meses entre si. Com um mes fixado sobra uma coluna
+  // acesa e onze vazias — o cartao continua correto, mas perde o assunto, e o
+  // subtitulo diz isso em vez de deixar o leitor achar que quebrou.
+  const cSaz = cartao(document.getElementById('c-sazon'), 'Sazonalidade — ano × mês',
+    umMes
+      ? `Filtrado em ${NOME_MES[+estadoH.mes - 1]} — limpe o filtro de mês para comparar os doze`
+      : 'Volume embarcado por mês; escala de 0 ao máximo logo abaixo');
+  heatmap(cSaz.graf, sazon, anosNoFiltro, {titulo:'Sazonalidade por ano e mês'});
+  tabela(cSaz.tab,
+    [{rotulo:'Ano'}].concat(MESES.map(m => ({rotulo:m, num:true}))),
+    anosNoFiltro.map(a => [String(a)].concat(MESES.map((_,mi) => {
+      const v = (sazon[a]||{})[mi+1]; return v ? fmtT(v) : '—';
+    }))));
+}
+
+/* ===========================================================================
+   Página 1 — Operacional (Line-Up)
+   =========================================================================== */
+const L = DADOS.lineup;
+const estadoO = {porto:'__TODOS__', status:'__TODOS__', commodity:'__TODAS__', busca:''};
+
+// A ordem e a do processo: previsto -> aguardando berco -> carregando.
+const ORDEM_STATUS = ['EXPECTED','WAITING','LOADING','TBC'];
+const COR_STATUS = {EXPECTED:'var(--ord-1)', WAITING:'var(--ord-2)', LOADING:'var(--ord-3)', TBC:'var(--ord-0)'};
+const NOME_STATUS = {EXPECTED:'Previsto', WAITING:'Aguardando berço', LOADING:'Carregando', TBC:'A confirmar'};
+
+function iniciarFiltrosOp() {
+  const portos = [...new Set((L.navios||[]).map(n => n.porto).filter(Boolean))].sort();
+  const selP = document.getElementById('f-porto');
+  selP.appendChild(new Option('Todos os portos','__TODOS__'));
+  portos.forEach(p => selP.appendChild(new Option(p, p)));
+
+  const selS = document.getElementById('f-status');
+  selS.appendChild(new Option('Todos os status','__TODOS__'));
+  ORDEM_STATUS.filter(s => (L.statuses||[]).includes(s))
+    .forEach(s => selS.appendChild(new Option(NOME_STATUS[s] || s, s)));
+
+  // Ordenadas por tonelagem na fila, nao alfabeticamente: quem abre a lista
+  // procura as cargas que pesam, e elas ficam no topo.
+  const porCommodity = new Map();
+  (L.navios||[]).forEach(n => {
+    const k = n.commodity;
+    if (k) porCommodity.set(k, (porCommodity.get(k)||0) + (n.tons||0));
+  });
+  const selCo = document.getElementById('f-commodity');
+  selCo.appendChild(new Option('Todas as cargas','__TODAS__'));
+  [...porCommodity.entries()].sort((a,b)=>b[1]-a[1])
+    .forEach(([nome]) => selCo.appendChild(new Option(nome, nome)));
+
+  const busca = document.getElementById('f-busca');
+  selP.addEventListener('change', () => { estadoO.porto = selP.value; renderOp(); });
+  selS.addEventListener('change', () => { estadoO.status = selS.value; renderOp(); });
+  selCo.addEventListener('change', () => { estadoO.commodity = selCo.value; renderOp(); });
+  busca.addEventListener('input', () => { estadoO.busca = busca.value.trim().toLowerCase(); renderOp(); });
+  document.getElementById('f-limpar-op').addEventListener('click', () => {
+    estadoO.porto='__TODOS__'; estadoO.status='__TODOS__';
+    estadoO.commodity='__TODAS__'; estadoO.busca='';
+    selP.value='__TODOS__'; selS.value='__TODOS__';
+    selCo.value='__TODAS__'; busca.value='';
+    renderOp();
+  });
+}
+
+function renderOp() {
+  const host = {
+    kpis: document.getElementById('kpis-op'),
+    portos: document.getElementById('c-portos-op'),
+    term: document.getElementById('c-terminais-op'),
+    comm: document.getElementById('c-commodities-op'),
+    hist: document.getElementById('c-fila-hist'),
+    navios: document.getElementById('c-navios')
+  };
+
+  if (!L.snapshot) {
+    host.kpis.textContent = '';
+    [host.portos, host.term, host.comm, host.hist, host.navios].forEach(h => {
+      h.textContent = '';
+      h.appendChild(el('div','vazio','Line-Up indisponível — o dashboard foi gerado sem conexão com o SQL Server.'));
+    });
+    return;
+  }
+
+  const navios = (L.navios||[]).filter(n => {
+    if (estadoO.porto !== '__TODOS__' && n.porto !== estadoO.porto) return false;
+    if (estadoO.status !== '__TODOS__' && n.status !== estadoO.status) return false;
+    if (estadoO.commodity !== '__TODAS__' && n.commodity !== estadoO.commodity) return false;
+    if (estadoO.busca) {
+      const alvo = [n.navio, n.terminal, n.commodity, n.destino, n.charterer]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!alvo.includes(estadoO.busca)) return false;
+    }
+    return true;
+  });
+
+  const soma = (arr) => arr.reduce((s,n) => s + (n.tons||0), 0);
+  const porStatus = {};
+  ORDEM_STATUS.forEach(s => porStatus[s] = navios.filter(n => n.status === s));
+
+  /* --- KPIs --- */
+  fichas(host.kpis, [
+    {rotulo:'Navios na fila', valor: fmtN(navios.length), heroi:true, nota:`Snapshot de ${fmtData(L.snapshot)}`},
+    {rotulo:'Tonelagem na fila', valor: fmtT(soma(navios))},
+    {rotulo:'Carregando', valor: fmtN(porStatus.LOADING.length), nota: fmtT(soma(porStatus.LOADING))},
+    {rotulo:'Aguardando berço', valor: fmtN(porStatus.WAITING.length), nota: fmtT(soma(porStatus.WAITING))},
+    {rotulo:'Previstos', valor: fmtN(porStatus.EXPECTED.length), nota: fmtT(soma(porStatus.EXPECTED))}
+  ]);
+
+  /* --- Fila por porto e status --- */
+  const seriesStatus = ORDEM_STATUS
+    .filter(s => navios.some(n => n.status === s))
+    .map(s => ({chave:s, nome:NOME_STATUS[s] || s, cor:COR_STATUS[s]}));
+
+  const mapaPortos = new Map();
+  navios.forEach(n => {
+    const p = n.porto || '—';
+    const linha = mapaPortos.get(p) || {nome:p, valores:{}, total:0, navios:0};
+    linha.valores[n.status] = (linha.valores[n.status]||0) + (n.tons||0);
+    linha.total += (n.tons||0); linha.navios += 1;
+    mapaPortos.set(p, linha);
+  });
+  const linhasPortos = [...mapaPortos.values()].sort((a,b)=>b.total-a.total);
+
+  const cPortos = cartao(host.portos, 'Fila por porto e status',
+    'A cor escurece conforme o navio avança: previsto → aguardando → carregando');
+  empilhadaH(cPortos.graf, linhasPortos, seriesStatus, {titulo:'Fila por porto e status'});
+  tabela(cPortos.tab,
+    [{rotulo:'Porto'}].concat(seriesStatus.map(s=>({rotulo:s.nome,num:true})))
+      .concat([{rotulo:'Total',num:true},{rotulo:'Navios',num:true}]),
+    linhasPortos.map(l => [l.nome]
+      .concat(seriesStatus.map(s => fmtT(l.valores[s.chave]||0)))
+      .concat([fmtT(l.total), fmtN(l.navios)])));
+
+  /* --- Haste: terminais e commodities --- */
+  const agrupar = (campo) => {
+    const m = new Map();
+    navios.forEach(n => {
+      const k = n[campo] || '—';
+      const v = m.get(k) || {nome:k, valor:0, navios:0};
+      v.valor += (n.tons||0); v.navios += 1;
+      m.set(k, v);
+    });
+    return [...m.values()].sort((a,b)=>b.valor-a.valor);
+  };
+
+  const dTerm = agrupar('terminal').slice(0,10);
+  const cTerm = cartao(host.term, 'Terminais com mais carga na fila', 'Top 10');
+  barrasH(cTerm.graf, dTerm.map(d => ({...d, extra: `${d.navios} navio(s)`})), {titulo:'Terminais na fila'});
+  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+    dTerm.map(d => [d.nome, fmtT(d.valor), fmtN(d.navios)]));
+
+  const dComm = agrupar('commodity').slice(0,10);
+  const cComm = cartao(host.comm, 'Commodities na fila', 'Top 10');
+  barrasH(cComm.graf, dComm.map(d => ({...d, extra: `${d.navios} navio(s)`})), {titulo:'Commodities na fila'});
+  tabela(cComm.tab, [{rotulo:'Commodity'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+    dComm.map(d => [d.nome, fmtT(d.valor), fmtN(d.navios)]));
+
+  /* --- Histórico de snapshots ---
+     Colunas, nao linha: os snapshots sao esparsos e irregulares, e uma linha
+     ligando 26/05 a 02/06 sugeriria uma continuidade que o dado nao tem.
+
+     Passa pelos mesmos filtros do resto da pagina — e por isso o historico vem
+     como tabela-fato [data, porto, status, carga, tons, navios] e nao como
+     total pronto. Com totais, este grafico discordaria dos KPIs assim que
+     qualquer filtro fosse ligado. */
+  const porData = new Map();
+  (L.datasHistorico||[]).forEach(d => porData.set(d, {tons:0, navios:0}));
+  (L.historico||[]).forEach(([data, porto, status, carga, tons, navios]) => {
+    if (estadoO.porto !== '__TODOS__' && porto !== estadoO.porto) return;
+    if (estadoO.status !== '__TODOS__' && status !== estadoO.status) return;
+    if (estadoO.commodity !== '__TODAS__' && carga !== estadoO.commodity) return;
+    const acc = porData.get(data) || {tons:0, navios:0};
+    acc.tons += tons; acc.navios += navios;
+    porData.set(data, acc);
+  });
+  // A busca textual nao entra aqui: ela filtra por navio, e o historico e
+  // agregado, sem os nomes. Fica dito no subtitulo em vez de silenciado.
+  const hist = [...porData.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+
+  const cHist = cartao(host.hist, 'Fila nos snapshots anteriores',
+    `${hist.length} snapshot(s) · datas não contíguas` +
+    (estadoO.busca ? ' · não reflete a busca por texto' : ''));
+  colunas(cHist.graf, hist.map(([data, v]) => ({
+    rotulo: fmtData(data).slice(0,5), rotuloLongo: fmtData(data),
+    valor: v.tons, n: v.navios
+  })), {altura:165, titulo:'Fila nos snapshots anteriores'});
+  tabela(cHist.tab, [{rotulo:'Snapshot'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+    hist.map(([data, v]) => [fmtData(data), fmtT(v.tons), fmtN(v.navios)]));
+
+  /* --- Tabela de navios --- */
+  host.navios.textContent = '';
+  const head = el('header');
+  head.appendChild(el('h2', null, 'Navios na fila'));
+  head.appendChild(el('span','sub', `${navios.length} de ${(L.navios||[]).length}`));
+  host.navios.appendChild(head);
+  const corpo = el('div');
+  host.navios.appendChild(corpo);
+  const ordenados = [...navios].sort((a,b) => (a.eta||'9999').localeCompare(b.eta||'9999'));
+  tabela(corpo,
+    [{rotulo:'Navio'},{rotulo:'Porto'},{rotulo:'Terminal'},{rotulo:'Status'},
+     {rotulo:'Commodity'},{rotulo:'Destino'},{rotulo:'Tons',num:true},{rotulo:'ETA'},{rotulo:'ETB'},{rotulo:'ETF'}],
+    ordenados.map(n => [
+      n.navio||'—', n.porto||'—', n.terminal||'—', NOME_STATUS[n.status]||n.status,
+      n.commodity||'—', n.destino||'—', fmtT(n.tons), fmtData(n.eta), fmtData(n.etb), fmtData(n.etf)
+    ]));
+}
+
+/* ===========================================================================
+   Abas, cabeçalho, resize
+   =========================================================================== */
+function abrirAba(qual) {
+  const ops = qual === 'op';
+  document.getElementById('aba-op').setAttribute('aria-selected', String(ops));
+  document.getElementById('aba-hist').setAttribute('aria-selected', String(!ops));
+  document.getElementById('pg-op').classList.toggle('ativa', ops);
+  document.getElementById('pg-hist').classList.toggle('ativa', !ops);
+  esconderDica();
+  // Re-renderiza: graficos escondidos medem largura zero.
+  if (ops) renderOp(); else renderHist();
+}
+document.getElementById('aba-op').addEventListener('click', () => abrirAba('op'));
+document.getElementById('aba-hist').addEventListener('click', () => abrirAba('hist'));
+
+(function iniciar() {
+  const p = S.periodo || {};
+  document.getElementById('meta-periodo').textContent =
+    `Sailed ${fmtData(p.inicio)} a ${fmtData(p.fim)} · ${fmtN((S.totais||{}).embarques)} embarques` +
+    (L.snapshot ? ` · Line-Up em ${fmtData(L.snapshot)}` : ' · Line-Up indisponível');
+  document.getElementById('meta-gerado').textContent =
+    'Gerado em ' + fmtData((DADOS.geradoEm||'').slice(0,10)) + ' ' + (DADOS.geradoEm||'').slice(11,16);
+  document.getElementById('rodape').textContent =
+    'Fonte: NABSA — Sailed (planilha) e Line-Up (SQL Server). Arquivo autocontido, sem requisições externas.';
+
+  iniciarFiltrosHist();
+  iniciarFiltrosOp();
+  renderHist();
+  renderOp();
+})();
+
+let t = null;
+window.addEventListener('resize', () => {
+  clearTimeout(t);
+  t = setTimeout(() => {
+    if (document.getElementById('pg-op').classList.contains('ativa')) renderOp(); else renderHist();
+  }, 160);
+});
+</script>
+</body>
+</html>
