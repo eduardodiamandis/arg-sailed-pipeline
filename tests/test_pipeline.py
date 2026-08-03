@@ -67,18 +67,19 @@ if "webdriver_manager" not in sys.modules:
 # (adicionamos src/ ao path se necessário)
 # ---------------------------------------------------------------------------
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from database import (
+from argentina_etl.pipelines.sailed import (
     _cortar_apos_duas_linhas_vazias,
     ler_arquivo_novo,
     merge_com_banco,
-    salvar_local,
-    salvar_onedrive,
-    salvar_sql_server,
+    remover_colunas_sem_nome,
 )
-from downloader import _build_output_name, _extract_server_filename, download_file
-from latest_file import get_latest_file
+from argentina_etl.storage.excel import salvar_local
+from argentina_etl.storage.onedrive import salvar_onedrive
+from argentina_etl.storage.sql_server import salvar_sql_server
+from argentina_etl.downloader import _build_output_name, _extract_server_filename, download_file
+from argentina_etl.utils.files import get_latest_file
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +141,54 @@ class TestCortarAposDuasLinhasVazias(unittest.TestCase):
         self.assertEqual(len(result), 3)
 
 
+class TestRemoverColunasSemNome(unittest.TestCase):
+
+    def _com_unnamed(self):
+        df = _sample_db()
+        for i in (13, 14, 18):
+            df[f"Unnamed: {i}"] = None
+        return df
+
+    def test_remove_as_colunas_sem_nome(self):
+        df = remover_colunas_sem_nome(self._com_unnamed())
+        self.assertEqual(
+            [c for c in df.columns if str(c).startswith("Unnamed:")], []
+        )
+
+    def test_preserva_as_colunas_de_verdade(self):
+        original = _sample_db()
+        df = remover_colunas_sem_nome(self._com_unnamed())
+        self.assertEqual(list(df.columns), list(original.columns))
+        self.assertEqual(len(df), len(original))
+
+    def test_sem_colunas_sem_nome_devolve_intacto(self):
+        original = _sample_db()
+        df = remover_colunas_sem_nome(original)
+        self.assertEqual(list(df.columns), list(original.columns))
+
+    def test_avisa_antes_de_descartar_coluna_com_conteudo(self):
+        """
+        O caso que importa: a 'Unnamed: 18' da base real escondia a anotacao
+        'ultima linha do banco do almyr'. Descartar em silencio seria perder
+        um dado que uma pessoa escreveu.
+        """
+        df = self._com_unnamed()
+        df.loc[df.index[0], "Unnamed: 18"] = "ultima linha do banco do almyr"
+
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            resultado = remover_colunas_sem_nome(df)
+
+        avisos = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+        self.assertIn("ultima linha do banco do almyr", avisos)
+        self.assertIn("Unnamed: 18", avisos)
+        self.assertNotIn("Unnamed: 18", resultado.columns)
+
+    def test_nao_avisa_quando_todas_estao_vazias(self):
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            remover_colunas_sem_nome(self._com_unnamed())
+        mock_logger.warning.assert_not_called()
+
+
 class TestLerArquivoNovo(unittest.TestCase):
 
     def test_ler_arquivo_novo(self):
@@ -151,13 +200,91 @@ class TestLerArquivoNovo(unittest.TestCase):
              "Cargo": "CORN", "Tons": 2000},
         ])
 
-        with patch("database.pd.read_excel", return_value=df_raw), \
-             patch("database._cortar_apos_duas_linhas_vazias", side_effect=lambda x: x):
+        with patch("argentina_etl.pipelines.sailed.pd.read_excel", return_value=df_raw), \
+             patch("argentina_etl.pipelines.sailed._cortar_apos_duas_linhas_vazias", side_effect=lambda x: x):
             result = ler_arquivo_novo(Path("fake.xlsx"))
 
         self.assertEqual(result["Month"].iloc[0], 3)
         self.assertEqual(result["Year"].iloc[0], 2026)
         self.assertIsInstance(result["Date"].iloc[0], pd.Timestamp)
+
+
+class TestMergeCobertura(unittest.TestCase):
+    """
+    Trava de cobertura: um periodo so e substituido se o arquivo novo trouxer
+    todos os dias que o banco ja tem. Sem isso, um arquivo com MAIS linhas
+    porem MENOS dias apagava o fim do mes em silencio — nem detectar_gaps nem
+    validar_continuidade pegavam o caso. Ver ESTRUTURA.md, decisao 9.4.
+    """
+
+    def _frame(self, dias, por_dia, mes=7, tons=100.0):
+        linhas = [
+            {"Date": pd.Timestamp(2026, mes, d), "Destination": "X",
+             "Origin": "ARGENTINA", "Cargo": "CORN", "Tons": tons,
+             "Month": mes, "Year": 2026}
+            for d in dias for _ in range(por_dia)
+        ]
+        return pd.DataFrame(linhas)
+
+    def test_mais_linhas_menos_dias_e_rejeitado(self):
+        db = self._frame(range(1, 21), 5)      # 100 linhas, dias 1-20
+        novo = self._frame(range(1, 16), 8)    # 120 linhas, dias 1-15
+
+        result = merge_com_banco(novo, db)
+
+        # O banco inteiro deve ter sido preservado
+        self.assertEqual(len(result), 100)
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 21)))
+
+    def test_mesmos_dias_e_mais_linhas_e_aceito(self):
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 21), 6)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 120)
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 21)))
+
+    def test_dias_a_mais_no_arquivo_novo_e_aceito(self):
+        """O caso normal do dia a dia: o arquivo traz o mes com mais um dia."""
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 22), 5)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(set(result["Date"].dt.day), set(range(1, 22)))
+
+    def test_contagem_igual_e_aceita(self):
+        """
+        Reformulacao da fonte: o NABSA redivide parcelas sem mudar o numero de
+        linhas. Foi o caso do SAROCHA NAREE em 14/04/2026, soma identica.
+        """
+        db = self._frame(range(1, 21), 5, tons=100.0)
+        novo = self._frame(range(1, 21), 5, tons=200.0)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 100)
+        self.assertTrue((result["Tons"] == 200.0).all())
+
+    def test_motivo_da_rejeicao_cita_os_dias_perdidos(self):
+        db = self._frame(range(1, 21), 5)
+        novo = self._frame(range(1, 16), 8)
+
+        with patch("argentina_etl.pipelines.sailed.logger") as mock_logger:
+            merge_com_banco(novo, db)
+
+        avisos = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+        self.assertIn("REJEITADO", avisos)
+        self.assertIn("16", avisos)  # primeiro dia perdido
+
+    def test_periodo_novo_no_banco_e_sempre_aceito(self):
+        db = self._frame(range(1, 21), 5, mes=7)
+        novo = self._frame([1], 1, mes=8)
+
+        result = merge_com_banco(novo, db)
+
+        self.assertEqual(len(result), 101)
 
 
 class TestMergeComBanco(unittest.TestCase):
@@ -263,8 +390,13 @@ class TestSalvarOnedrive(unittest.TestCase):
         def fake_to_excel(self_df, writer, sheet_name=None, **kwargs):
             sheets_criadas.append(sheet_name)
 
-        with patch("database.pd.ExcelWriter", return_value=mock_writer), \
-             patch("database.Path.mkdir"), \
+        # A gravacao inteira e mockada, entao o .xlsx nunca existe em disco. As
+        # duas etapas de sincronizacao tocam o arquivo real (os.utime) e sao
+        # assunto do test_sync.py — aqui o que se verifica e quais sheets saem.
+        with patch("argentina_etl.storage.onedrive.pd.ExcelWriter", return_value=mock_writer), \
+             patch("argentina_etl.storage.onedrive.Path.mkdir"), \
+             patch("argentina_etl.storage.onedrive._forcar_sync_onedrive"), \
+             patch("argentina_etl.storage.onedrive.verificar_sincronizacao"), \
              patch.object(pd.DataFrame, "to_excel", fake_to_excel):
             salvar_onedrive(df, Path("onedrive/test.xlsx"))
 
@@ -291,7 +423,7 @@ class TestSalvarSqlServer(unittest.TestCase):
         mock_pyodbc.connect.return_value = mock_conn
 
         with patch.dict("sys.modules", {"pyodbc": mock_pyodbc}), \
-             patch("database.pyodbc", mock_pyodbc):
+             patch("argentina_etl.storage.sql_server.pyodbc", mock_pyodbc):
             salvar_sql_server(df, "SERVER", "DATABASE", "TABLE")
 
         delete_calls = [
@@ -319,7 +451,7 @@ class TestSalvarSqlServer(unittest.TestCase):
         mock_pyodbc.connect.return_value = mock_conn
 
         with patch.dict("sys.modules", {"pyodbc": mock_pyodbc}), \
-             patch("database.pyodbc", mock_pyodbc):
+             patch("argentina_etl.storage.sql_server.pyodbc", mock_pyodbc):
             with self.assertRaises(Exception):
                 salvar_sql_server(df, "SERVER", "DATABASE", "TABLE")
 
@@ -407,10 +539,10 @@ class TestDownloadFile(unittest.TestCase):
             mock_driver = self._make_mock_driver(downloaded)
 
             # Faz tempfile.mkdtemp retornar nossa pasta controlada
-            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
-                 patch("downloader.Service"), \
-                 patch("downloader.ChromeDriverManager"):
+            with patch("argentina_etl.downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("argentina_etl.downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("argentina_etl.downloader.Service"), \
+                 patch("argentina_etl.downloader.ChromeDriverManager"):
                 result = download_file(
                     url="http://fake.url/file",
                     file_name="vessels_sailed_update.xlsx",
@@ -418,8 +550,10 @@ class TestDownloadFile(unittest.TestCase):
                     timeout=5,
                 )
 
-        self.assertIn("Sailed Vessels_2026-03-01", str(result))
-        self.assertTrue(result.exists())
+            # Dentro do with: o TemporaryDirectory apaga dest_tmp ao sair, e
+            # result.exists() daria False por isso, nao por falha do download.
+            self.assertIn("Sailed Vessels_2026-03-01", str(result))
+            self.assertTrue(result.exists())
 
     def test_levanta_erro_quando_download_nao_aparece(self):
         """Sem arquivos na pasta temp → TimeoutError após timeout curto."""
@@ -433,11 +567,11 @@ class TestDownloadFile(unittest.TestCase):
             mock_driver.quit = Mock()
 
             # Pasta vazia — _wait_for_download vai esgotar o timeout
-            with patch("downloader.tempfile.mkdtemp", return_value=dl_tmp), \
-                 patch("downloader.webdriver.Chrome", return_value=mock_driver), \
-                 patch("downloader.Service"), \
-                 patch("downloader.ChromeDriverManager"), \
-                 patch("downloader.time.sleep"):  # acelera o polling
+            with patch("argentina_etl.downloader.tempfile.mkdtemp", return_value=dl_tmp), \
+                 patch("argentina_etl.downloader.webdriver.Chrome", return_value=mock_driver), \
+                 patch("argentina_etl.downloader.Service"), \
+                 patch("argentina_etl.downloader.ChromeDriverManager"), \
+                 patch("argentina_etl.downloader.time.sleep"):  # acelera o polling
                 with self.assertRaises(TimeoutError):
                     download_file(
                         url="http://fake.url/file",
@@ -456,14 +590,14 @@ class TestValidateExcelFile(unittest.TestCase):
             f.write(b"PK" + b"\x00" * 5000)
             tmp = Path(f.name)
         try:
-            from downloader import _validate_excel_file
+            from argentina_etl.downloader import _validate_excel_file
             _validate_excel_file(tmp)  # não deve levantar
         finally:
             tmp.unlink(missing_ok=True)
 
     def test_arquivo_html_levanta_valor_error(self):
         import tempfile
-        from downloader import _validate_excel_file
+        from argentina_etl.downloader import _validate_excel_file
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
             # Simula página HTML retornada em vez do Excel
             f.write(b"<html><body>Redirecting...</body></html>" * 200)
@@ -477,7 +611,7 @@ class TestValidateExcelFile(unittest.TestCase):
 
     def test_arquivo_muito_pequeno_levanta_valor_error(self):
         import tempfile
-        from downloader import _validate_excel_file
+        from argentina_etl.downloader import _validate_excel_file
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
             f.write(b"PK" + b"\x00" * 10)  # assinatura OK mas tamanho insuficiente
             tmp = Path(f.name)
@@ -519,7 +653,7 @@ class TestGetLatestFile(unittest.TestCase):
             def fake_ctime(p):
                 return ctime_map[str(p)]
 
-            with patch("latest_file.os.path.getctime", side_effect=fake_ctime):
+            with patch("argentina_etl.utils.files.os.path.getctime", side_effect=fake_ctime):
                 result = get_latest_file(Path(tmpdir))
 
         self.assertEqual(result.name, "c.xlsx")

@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 import pandas as pd
-from logger_config import logger
+from argentina_etl.logging_setup import logger
 
 # Selenium — importado no topo para permitir mock em testes unitários
 from selenium import webdriver

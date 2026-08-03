@@ -1,0 +1,29 @@
+# Correcoes conhecidas do Sailed, aplicadas a cada rodada do pipeline.
+#
+# POR QUE ESTE ARQUIVO EXISTE
+# Corrigir a mao nao gruda sozinho. O SQL leva DELETE + INSERT total a cada
+# rodada e a planilha do OneDrive e reescrita, as duas a partir da base — entao
+# um conserto feito la e desfeito na madrugada seguinte. E se o NABSA republicar
+# o mes, a substituicao em bloco do merge sobrescreve ate a base. Uma correcao so
+# e permanente se for reaplicada a cada rodada, e e isso que este arquivo faz.
+#
+# COMO O CASAMENTO FUNCIONA
+# Uma linha so e corrigida se data + navio + carga + destino + tons_errado
+# baterem todos. Incluir o valor errado na chave e deliberado: no dia em que a
+# origem corrigir o dado, a regra deixa de casar sozinha e nao faz nada — em vez
+# de sobrescrever o valor certo com o nosso palpite.
+#
+# COLUNAS
+#   acao          corrigir (troca tons_correto) ou remover (apaga a linha)
+#   tons_correto  obrigatorio quando acao=corrigir; vazio quando acao=remover
+#   modo          aplicar — a origem ainda publica o valor errado; espera-se que
+#                           case, e nao casar vira aviso
+#                 guarda  — o dado ja foi consertado na base; a regra fica de
+#                           sentinela. Silencio e o estado esperado; se ela
+#                           casar, houve regressao e sai WARNING
+#                 (coluna opcional; ausente ou vazia = aplicar)
+#   motivo        por que, com evidencia — quem ler daqui a dois anos precisa
+#
+# Linhas iniciadas por # sao ignoradas.
+data,navio,carga,destino,tons_errado,acao,tons_correto,modo,motivo,registrado_em
+2025-11-20,EPIC RADIANCE,SOYBEANMEAL,TURKEY,49806067.0,corrigir,49806.07,guarda,"CONFIRMADO pelo operador em 03/08/2026: erro de digitacao na base do NABSA, valor correto e o publicado dividido por 1000. O arquivo bruto baixado em 02/12/2025 (linha 326) ja trazia 49806067,00 — nao e erro de leitura nosso; era uma linha isolada num arquivo de 614, com as vizinhas normais (46.598,47 / 7.700 / 21.890). Evidencia que apontava para o mesmo valor antes da confirmacao: nenhum navio carrega 49,8 milhoes de toneladas (o maior graneleiro em operacao leva ~400 mil); os digitos batem exatamente com 49.806,067, ou seja ponto decimal deslocado em 3 casas; SOYBEANMEAL tem percentil 99 em 49.993 t e o maior embarque ja registrado para a Turquia foi 51.508 t; e o proprio EPIC RADIANCE aparece em 22/09/2024 levando 35.305 t da mesma carga para a Espanha. Sem correcao a linha valia 5,3% de todo o historico de 8 anos. MODO GUARDA desde 03/08/2026: a base foi corrigida a mao nessa data e a regra ficou de sentinela contra o NABSA republicar novembro/2025.",2026-08-03

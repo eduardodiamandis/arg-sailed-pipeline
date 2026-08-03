@@ -1,0 +1,364 @@
+"""
+__main__.py
+-----------
+Orquestrador do pipeline de atualização do banco Arg_sailed_database.
+
+Fluxo:
+  1.  Download dos arquivos Sailed e Line-Up
+  1b. Snapshot diário do Line-Up no SQL Server (append-only)
+  2.  Lê o arquivo mais recente do Sailed e valida o corte de rodapé
+  3.  Lê o banco existente
+  4.  Merge período a período, com trava de segurança, e validações pós-merge
+  5.  Salva localmente, no OneDrive (com as sheets derivadas e as pivots) e no
+      SQL Server
+  5b. Publica no SharePoint via Graph, se GRAPH_UPLOAD_ENABLED estiver ligado
+  6.  Envia resumo do log por e-mail
+
+Só orquestra: a regra de negócio mora em pipelines/ e a escrita em storage/.
+"""
+from __future__ import annotations
+
+import sys
+import time
+
+import pandas as pd
+
+from argentina_etl.config import (
+    DIR_LINEUP_BACKUP,
+    DIR_SAILED_BACKUP,
+    GRAPH_CLIENT_ID,
+    GRAPH_CLIENT_SECRET,
+    GRAPH_FOLDER,
+    GRAPH_HOST,
+    GRAPH_SITE_PATH,
+    GRAPH_TENANT_ID,
+    GRAPH_UPLOAD_ENABLED,
+    LINEUP_FORCE_SNAPSHOT,
+    PATH_CORRECOES,
+    PATH_DATABASE,
+    PATH_DATABASE_OUTPUT,
+    PATH_ONEDRIVE,
+    SQL_DATABASE,
+    SQL_SERVER,
+    SQL_TABLE,
+    SQL_TABLE_LINEUP,
+    TIMEOUT_LINEUP,
+    TIMEOUT_SAILED,
+    URL_LINEUP,
+    URL_SAILED,
+    validar_config_graph,
+)
+from argentina_etl.pipelines.correcoes import aplicar_correcoes, carregar_correcoes
+from argentina_etl.pipelines.sailed import (
+    ler_arquivo_novo,
+    merge_com_banco,
+    remover_colunas_sem_nome,
+)
+from argentina_etl.storage.excel import salvar_local
+from argentina_etl.storage.onedrive import salvar_onedrive, _forcar_sync_onedrive
+from argentina_etl.storage.sql_server import salvar_sql_server
+from argentina_etl.storage.sharepoint import publicar
+from argentina_etl.downloader import download_file
+from argentina_etl.reporting.report import send_log_report
+from argentina_etl.utils.files import get_latest_file
+from argentina_etl.pipelines.lineup import ler_arquivo_lineup
+from argentina_etl.storage.sql_server import salvar_lineup_sql
+from argentina_etl.logging_setup import logger, _DEFAULT_LOG_FILE
+from argentina_etl.validation import (
+    detectar_gaps,
+    resumo_mes_corrente,
+    validar_continuidade,
+    validar_corte_rodape,
+    validar_tonelagem,
+)
+
+
+def main() -> None:
+    start_time = time.time()
+    pipeline_ok = True
+
+    logger.info("=" * 60)
+    logger.info("INÍCIO DO PIPELINE — Arg Sailed Database")
+    logger.info("=" * 60)
+
+    # ------------------------------------------------------------------
+    # 1. Downloads
+    # ------------------------------------------------------------------
+    logger.info("--- ETAPA 1: Downloads ---")
+
+    try:
+        download_file(
+            url=URL_SAILED,
+            file_name="vessels_sailed_update.xlsx",
+            destination_path=DIR_SAILED_BACKUP,
+            timeout=TIMEOUT_SAILED,
+        )
+    except Exception as e:
+        logger.error(f"Falha no download do Sailed: {e}")
+        logger.error("Pipeline interrompido — não é possível continuar sem o arquivo.")
+        pipeline_ok = False
+        send_log_report(_DEFAULT_LOG_FILE, success=False,
+                        duration_seconds=time.time() - start_time)
+        sys.exit(1)
+
+    time.sleep(3)
+
+    try:
+        download_file(
+            url=URL_LINEUP,
+            file_name="vessel_update.xlsx",
+            destination_path=DIR_LINEUP_BACKUP,
+            timeout=TIMEOUT_LINEUP,
+        )
+    except Exception as e:
+        logger.warning(f"Falha no download do Line-Up (não crítico): {e}")
+
+    # ------------------------------------------------------------------
+    # 1b. Snapshot diario do Line-Up
+    # ------------------------------------------------------------------
+    # Arg_Lineup e append-only: acumula um snapshot por dia e nunca apaga
+    # historico. Nao-critico — o Sailed e o produto principal e nao depende
+    # disto. Navios com Status=SAILED sao filtrados dentro de
+    # ler_arquivo_lineup para nao duplicar o que ja esta em Arg_Sailed.
+    logger.info("--- ETAPA 1b: Snapshot do Line-Up ---")
+
+    try:
+        latest_lineup = get_latest_file(DIR_LINEUP_BACKUP)
+        df_lineup = ler_arquivo_lineup(latest_lineup)
+        salvar_lineup_sql(
+            df_lineup,
+            SQL_SERVER,
+            SQL_DATABASE,
+            SQL_TABLE_LINEUP,
+            force=LINEUP_FORCE_SNAPSHOT,
+        )
+    except FileNotFoundError:
+        logger.warning("Nenhum arquivo de Line-Up encontrado — etapa ignorada.")
+    except Exception as e:
+        logger.error(f"Falha no processamento do Line-Up (nao-critico): {e}")
+
+    # ------------------------------------------------------------------
+    # 2. Leitura do arquivo mais recente
+    # ------------------------------------------------------------------
+    logger.info("--- ETAPA 2: Leitura do arquivo ---")
+
+    latest = get_latest_file(DIR_SAILED_BACKUP)
+    df_novo = ler_arquivo_novo(latest)
+
+    # Alerta se o detector de rodapé pode ter cortado dados cedo demais.
+    # As ETAPAS 2-4 nao sao protegidas por try/except, e uma validacao que so
+    # informa nunca deve derrubar o pipeline — dai a guarda local.
+    try:
+        validar_corte_rodape(df_novo, path_original=str(latest))
+    except Exception as e:
+        logger.error(f"Falha na validacao de corte de rodape (ignorada): {e}")
+
+    # ------------------------------------------------------------------
+    # 3. Leitura do banco existente
+    # ------------------------------------------------------------------
+    logger.info("--- ETAPA 3: Leitura do banco ---")
+
+    logger.info(f"Lendo banco: {PATH_DATABASE}")
+    db = pd.read_excel(PATH_DATABASE)
+    # A base arrastava seis colunas 'Unnamed: 13'-'Unnamed: 18' vazias, criadas
+    # pelo Excel e reescritas a cada execucao porque o merge as carregava
+    # adiante. Sai aqui, na leitura, para nao voltarem pelo write-back.
+    db = remover_colunas_sem_nome(db)
+    db["Date"] = pd.to_datetime(db["Date"])
+    logger.info(f"Banco carregado: {len(db)} linhas, {len(db.columns)} colunas")
+
+    # ------------------------------------------------------------------
+    # 4. Merge
+    # ------------------------------------------------------------------
+    logger.info("--- ETAPA 4: Merge ---")
+
+    db_atualizado = merge_com_banco(df_novo, db)
+
+    # ------------------------------------------------------------------
+    # 4b. Correcoes conhecidas
+    # ------------------------------------------------------------------
+    # Reaplicadas a cada rodada, e nao consertadas a mao, porque tudo o que vem
+    # depois daqui e reescrito a partir deste DataFrame: a base, o Arg_Sailed
+    # (DELETE + INSERT total) e a planilha do OneDrive. Um conserto feito numa
+    # dessas pontas dura ate a madrugada seguinte. Ver ESTRUTURA.md, decisao 9.6.
+    #
+    # Vem depois do merge de proposito: se o NABSA republicar um mes ja
+    # corrigido, a substituicao em bloco traz o valor errado de volta e a
+    # correcao precisa acontecer depois dela, nao antes.
+    try:
+        db_atualizado = aplicar_correcoes(db_atualizado, carregar_correcoes(PATH_CORRECOES))
+    except Exception as e:
+        logger.error(f"Falha ao aplicar correcoes (ignorada): {e}")
+
+    # Antes aqui se despejavam as ultimas 15 datas do banco. Uma lista crua
+    # exige que alguem a leia e faca a conta de cabeca toda noite; o que
+    # interessa e ate onde a base chegou e quanto falta para o mes fechar.
+    try:
+        resumo_mes_corrente(db_atualizado)
+    except Exception as e:
+        logger.error(f"Falha ao resumir o mes corrente (ignorada): {e}")
+
+    # Duas validacoes complementares:
+    #
+    # validar_continuidade compara o fim da base com o inicio do arquivo novo.
+    # E ESTA que detecta a classe de perda ocorrida em 26-30/06/2026: base
+    # parada em 25/06 e arquivo trazendo so julho.
+    #
+    # detectar_gaps olha os dias que existiam no banco e sumiram apos o merge —
+    # na pratica, o caso em que a trava de seguranca rejeitou um periodo. Ele
+    # NAO pega o caso acima, porque so examina os periodos presentes no arquivo
+    # novo.
+    #
+    # Os avisos das duas saem como WARNING no log, e o _extract_warnings do
+    # report.py os coleta de la: aparecem na secao "Avisos" do e-mail sem
+    # acoplamento extra.
+    #
+    # 'db' ainda e o banco PRE-merge: merge_com_banco converte a coluna Date
+    # in-place mas nao remove linhas.
+    try:
+        validar_continuidade(db, df_novo)
+        gaps = detectar_gaps(df_novo, db_atualizado)
+        if gaps:
+            logger.warning(
+                f"⚠️ {len(gaps)} periodo(s) com gaps — verifique o arquivo-fonte "
+                f"antes de confiar nos dados."
+            )
+
+        # Roda DEPOIS das correcoes: o caso ja conhecido nao deve alarmar toda
+        # noite. O que sobra aqui e caso novo, e por isso merece o e-mail.
+        impossiveis = validar_tonelagem(db_atualizado)
+        if impossiveis:
+            logger.warning(
+                f"⚠️ {len(impossiveis)} embarque(s) com tonelagem impossivel "
+                f"permanecem na base apos as correcoes."
+            )
+    except Exception as e:
+        logger.error(f"Falha nas validacoes pos-merge (ignorada): {e}")
+
+    # Estatísticas para o e-mail de sucesso
+    periodos_novos = df_novo["Date"].dt.to_period("M").unique()
+    rows_added     = len(db_atualizado) - (len(db) - db["Date"].dt.to_period("M").isin(periodos_novos).sum())
+    db_stats = {
+        "total_rows": len(db_atualizado),
+        "last_date":  db_atualizado["Date"].max().strftime("%d/%m/%Y"),
+        "rows_added": int(rows_added),
+        "periods":    ", ".join(sorted(periodos_novos.astype(str))),
+    }
+
+    # ------------------------------------------------------------------
+    # 5. Persistência
+    # ------------------------------------------------------------------
+    logger.info("--- ETAPA 5: Salvamento ---")
+
+    ts = time.strftime("%Y-%m-%d_%H%M")
+    path_local = PATH_DATABASE_OUTPUT.with_stem(PATH_DATABASE_OUTPUT.stem + f"_{ts}")
+    try:
+        salvar_local(db_atualizado, path_local)
+    except Exception as e:
+        logger.error(f"Falha ao salvar arquivo local: {e}")
+        pipeline_ok = False
+
+    # Atualiza a base para que a próxima execução parta do estado atual.
+    # Sem isto a base congela: enquanto o NABSA entrega o mês corrente o merge
+    # recompõe o mês, mas na virada os dias do fim do mês anterior caem num vão
+    # que ninguém preenche (foi o que apagou 26–30/06/2026 do Power BI por 26
+    # dias). Depende da trava de segurança de merge_com_banco — reescrever a base
+    # com um merge que substitui períodos cegamente corromperia o histórico.
+    # Ver ESTRUTURA.md, decisão 9.1.
+    try:
+        salvar_local(db_atualizado, PATH_DATABASE)
+        logger.info(f"Base principal atualizada: {PATH_DATABASE}")
+    except Exception as e:
+        logger.error(f"Falha ao atualizar a base principal: {e}")
+        pipeline_ok = False
+
+    try:
+        salvar_onedrive(db_atualizado, PATH_ONEDRIVE)
+    except Exception as e:
+        logger.error(f"Falha ao salvar no OneDrive: {e}")
+        pipeline_ok = False
+
+    try:
+        salvar_sql_server(db_atualizado, SQL_SERVER, SQL_DATABASE, SQL_TABLE)
+    except Exception as e:
+        logger.error(f"Falha ao salvar no SQL Server: {e}")
+        pipeline_ok = False
+
+    # As Pivot Tables deixaram de ser uma etapa: sao geradas dentro de
+    # salvar_onedrive, com pandas, na mesma escrita das demais sheets. A
+    # automacao COM do Excel que existia aqui foi removida — ver
+    # storage/onedrive.py.
+
+    # ------------------------------------------------------------------
+    # 5b. Publicacao no SharePoint via Microsoft Graph
+    # ------------------------------------------------------------------
+    # Existe porque a pasta sincronizada pelo cliente do OneDrive nao confirma
+    # entrega: em 28/07/2026 o arquivo ficou "Sincronizacao pendente" por mais
+    # de 9 horas, com a copia local certa e a do servidor velha, sem nenhum
+    # sinal. Aqui o upload devolve o eTag do item no servidor — ou chegou, ou
+    # sabemos o codigo e a mensagem do porque nao chegou.
+    #
+    # Desligado ate a permissao Sites.Selected ser concedida; sem ela toda
+    # chamada retorna 401. Ver ESTRUTURA.md, Fase H.
+    if GRAPH_UPLOAD_ENABLED:
+        logger.info("--- ETAPA 5b: Publicacao no SharePoint ---")
+        faltando = validar_config_graph()
+        if faltando:
+            # Ligada mas sem configuracao: e erro de operacao, e precisa doer.
+            logger.error(
+                f"Publicacao no SharePoint ligada, mas faltam variaveis no .env: "
+                f"{', '.join(faltando)}. O arquivo NAO foi publicado."
+            )
+            pipeline_ok = False
+        else:
+            try:
+                publicar(
+                    PATH_ONEDRIVE,
+                    tenant_id=GRAPH_TENANT_ID,
+                    client_id=GRAPH_CLIENT_ID,
+                    client_secret=GRAPH_CLIENT_SECRET,
+                    host=GRAPH_HOST,
+                    caminho_site=GRAPH_SITE_PATH,
+                    pasta_remota=GRAPH_FOLDER,
+                )
+            except Exception as e:
+                # Falha aqui e falha de entrega: quem consome o .xlsx vai ver
+                # dados velhos. Marca o pipeline para o e-mail sair como ERRO —
+                # o SQL Server ja foi gravado, entao nao ha por que abortar.
+                logger.error(f"Falha ao publicar no SharePoint: {e}")
+                pipeline_ok = False
+    else:
+        logger.info(
+            "Publicacao no SharePoint desligada (GRAPH_UPLOAD_ENABLED=false) — "
+            "a entrega segue por conta do cliente do OneDrive."
+        )
+
+    # ------------------------------------------------------------------
+    # 6. E-mail com resumo do log
+    # ------------------------------------------------------------------
+    duration = time.time() - start_time
+    logger.info("--- ETAPA 6: Envio de e-mail ---")
+
+    if pipeline_ok:
+        logger.info("=" * 60)
+        logger.info("PIPELINE FINALIZADO COM SUCESSO")
+        logger.info(f"Duração total: {duration:.1f}s")
+        logger.info("=" * 60)
+    else:
+        logger.warning("=" * 60)
+        logger.warning("PIPELINE FINALIZADO COM ERROS — verifique o log")
+        logger.warning(f"Duração total: {duration:.1f}s")
+        logger.warning("=" * 60)
+
+    send_log_report(
+        _DEFAULT_LOG_FILE,
+        success=pipeline_ok,
+        duration_seconds=duration,
+        db_stats=db_stats,
+    )
+
+    
+
+
+if __name__ == "__main__":
+    main()

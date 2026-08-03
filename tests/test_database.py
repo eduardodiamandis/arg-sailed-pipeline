@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from database import _cortar_apos_duas_linhas_vazias, merge_com_banco
+from argentina_etl.pipelines.sailed import _cortar_apos_duas_linhas_vazias, merge_com_banco
 
 
 # ---------------------------------------------------------------------------

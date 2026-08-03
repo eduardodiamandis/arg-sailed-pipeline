@@ -1,0 +1,307 @@
+"""
+validacao.py
+------------
+Validações pós-merge para detectar problemas antes de persistir.
+
+Principal função: detectar gaps (dias faltando) nos períodos
+que acabaram de ser atualizados.
+"""
+from __future__ import annotations
+
+import calendar
+import datetime
+
+import pandas as pd
+
+from argentina_etl.logging_setup import logger
+
+
+def resumo_mes_corrente(
+    db: pd.DataFrame,
+    hoje: datetime.date | None = None,
+) -> dict | None:
+    """
+    Quanto falta para o mês corrente fechar.
+
+    Substituiu o despejo das "últimas 15 datas" no log: uma lista de datas
+    exige que alguém a leia e faça a conta de cabeça toda noite. O que importa
+    é uma linha só — até onde a base chegou e quantos dias faltam até o fim do
+    mês.
+
+    Returns
+    -------
+    dict com `mes`, `ultimo_dia`, `dias_no_mes`, `dias_com_dados` e
+    `dias_para_fechar`; None se o mês corrente ainda não tem nenhum dado
+    (normal na virada do mês, antes do primeiro embarque).
+    """
+    hoje = hoje or datetime.date.today()
+    dias_no_mes = calendar.monthrange(hoje.year, hoje.month)[1]
+
+    do_mes = db.loc[
+        (db["Date"].dt.month == hoje.month) & (db["Date"].dt.year == hoje.year),
+        "Date",
+    ]
+
+    if do_mes.empty:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): ainda sem dados na base — "
+            f"{dias_no_mes} dias até fechar."
+        )
+        return None
+
+    ultimo_dia = int(do_mes.dt.day.max())
+    dias_com_dados = int(do_mes.dt.day.nunique())
+    dias_para_fechar = dias_no_mes - ultimo_dia
+
+    if dias_para_fechar == 0:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): fechado — base vai até o dia "
+            f"{ultimo_dia}/{dias_no_mes}, com {dias_com_dados} dias de embarque."
+        )
+    else:
+        logger.info(
+            f"Mês corrente ({hoje.strftime('%m/%Y')}): base vai até o dia "
+            f"{ultimo_dia}/{dias_no_mes} — faltam {dias_para_fechar} dia(s) para fechar "
+            f"({dias_com_dados} dias com embarque até aqui)."
+        )
+
+    return {
+        "mes": hoje.strftime("%m/%Y"),
+        "ultimo_dia": ultimo_dia,
+        "dias_no_mes": dias_no_mes,
+        "dias_com_dados": dias_com_dados,
+        "dias_para_fechar": dias_para_fechar,
+    }
+
+
+def detectar_gaps(
+    df_novo: pd.DataFrame,
+    db_atualizado: pd.DataFrame,
+) -> list[dict]:
+    """
+    Dias que existem no banco JÁ ATUALIZADO mas não vieram no arquivo novo.
+
+    Para cada período (mês/ano) presente em `df_novo`, compara o conjunto de
+    dias do arquivo com o conjunto de dias que o período tem em
+    `db_atualizado`. Sobrando dias no banco, eles viram um gap.
+
+    Na prática isso pega o caso em que a trava de segurança de
+    `merge_com_banco` rejeitou o período: o banco manteve os dias antigos e o
+    arquivo novo trouxe menos.
+
+    NÃO compara com o calendário — nem todo dia tem embarque.
+
+    ⚠️ **Limite de escopo: só examina períodos presentes no arquivo novo.**
+    Um mês que sumiu por inteiro, ou que nunca aparece no arquivo, é invisível
+    aqui. Foi exatamente o caso de 26–30/06/2026: o arquivo trazia apenas
+    julho, junho jamais era examinado, e a função reportava "nenhum gap". Quem
+    cobre esse ângulo é `validar_continuidade`, comparando o fim da base com o
+    início do arquivo novo. Ver `test_gaps_e_cego_para_periodo_fora_do_arquivo_novo`.
+
+    Até 2026-07-29 esta docstring dizia comparar "com o banco ANTES da
+    atualização" — o código sempre comparou com o banco DEPOIS. Foi essa
+    descrição que sustentou a suposição errada da Fase B (ESTRUTURA.md).
+
+    Parameters
+    ----------
+    df_novo       : arquivo recém-lido do NABSA
+    db_atualizado : banco DEPOIS do merge
+
+    Returns
+    -------
+    Lista de dicts com:
+        - periodo       : str  (ex: "2026-03")
+        - dias_no_banco : int  (quantos dias únicos ficaram no banco)
+        - dias_no_novo  : int  (quantos dias únicos vieram no arquivo novo)
+        - dias_faltando : int  (quantos dias sobraram só no banco)
+        - dias_ausentes : list[int]  (quais são esses dias)
+    """
+    gaps = []
+
+    periodos_novos = df_novo["Date"].dt.to_period("M").unique()
+
+    for periodo in sorted(periodos_novos):
+        mes = periodo.month
+        ano = periodo.year
+
+        # Dias no arquivo novo para este período
+        dias_novo = set(
+            df_novo.loc[
+                (df_novo["Date"].dt.month == mes) & (df_novo["Date"].dt.year == ano),
+                "Date",
+            ].dt.day.unique()
+        )
+
+        # Dias no banco atualizado para este período
+        dias_banco = set(
+            db_atualizado.loc[
+                (db_atualizado["Date"].dt.month == mes)
+                & (db_atualizado["Date"].dt.year == ano),
+                "Date",
+            ].dt.day.unique()
+        )
+
+        logger.info(
+            f"Validação {periodo}: "
+            f"{len(dias_novo)} dias no arquivo novo, "
+            f"{len(dias_banco)} dias no banco atualizado"
+        )
+
+        if dias_novo != dias_banco:
+            faltando = sorted(dias_banco - dias_novo)
+            if faltando:
+                gap_info = {
+                    "periodo": str(periodo),
+                    "dias_no_banco": len(dias_banco),
+                    "dias_no_novo": len(dias_novo),
+                    "dias_faltando": len(faltando),
+                    "dias_ausentes": faltando,
+                }
+                gaps.append(gap_info)
+                logger.warning(
+                    f"⚠️ GAP DETECTADO em {periodo}: "
+                    f"{len(faltando)} dia(s) ausentes no arquivo novo: {faltando}"
+                )
+
+    if not gaps:
+        logger.info("✅ Nenhum gap detectado — todos os períodos estão consistentes.")
+
+    return gaps
+
+
+def validar_continuidade(
+    db_antes: pd.DataFrame,
+    df_novo: pd.DataFrame,
+    tolerancia_dias: int = 3,
+) -> dict | None:
+    """
+    Detecta descontinuidade entre o fim da base e o início do arquivo novo.
+
+    Complementa `detectar_gaps`, que só examina os períodos presentes no arquivo
+    novo e por isso é cego para o vão que se abre na virada de mês quando a base
+    está parada. Foi assim que 26–30/06/2026 sumiram do Power BI por 26 dias:
+    base congelada em 25/06, arquivo do NABSA trazendo apenas julho, e nenhuma
+    das duas pontas reclamando.
+
+    Sobreposição é o caso normal — o arquivo do NABSA cobre o mês corrente
+    inteiro, então a primeira data dele costuma ser anterior à última da base e
+    o vão fica negativo. Só um vão positivo indica base defasada.
+
+    Parameters
+    ----------
+    db_antes        : Banco ANTES do merge
+    df_novo         : Arquivo novo já lido
+    tolerancia_dias : Vão tolerado sem alerta. Nem todo dia tem embarque, então
+                      um mês pode legitimamente começar no dia 2 ou 3.
+
+    Returns
+    -------
+    dict com 'ultima_base', 'primeira_nova' e 'dias_no_vao', ou None se está tudo bem.
+    """
+    if db_antes.empty or df_novo.empty:
+        return None
+
+    ultima_base = pd.to_datetime(db_antes["Date"], errors="coerce").max()
+    primeira_nova = pd.to_datetime(df_novo["Date"], errors="coerce").min()
+
+    if pd.isna(ultima_base) or pd.isna(primeira_nova):
+        return None
+
+    dias_no_vao = (primeira_nova - ultima_base).days - 1
+
+    if dias_no_vao <= tolerancia_dias:
+        logger.info(
+            f"Continuidade OK: base até {ultima_base.strftime('%d/%m/%Y')}, "
+            f"arquivo novo começa em {primeira_nova.strftime('%d/%m/%Y')}"
+        )
+        return None
+
+    logger.warning(
+        f"⚠️ DESCONTINUIDADE: a base termina em {ultima_base.strftime('%d/%m/%Y')} e o "
+        f"arquivo novo só começa em {primeira_nova.strftime('%d/%m/%Y')} — {dias_no_vao} dia(s) "
+        f"sem cobertura de nenhuma das duas fontes. Esses dias NÃO entrarão no resultado. "
+        f"Verifique se a base parou de ser atualizada."
+    )
+    return {
+        "ultima_base": ultima_base.strftime("%Y-%m-%d"),
+        "primeira_nova": primeira_nova.strftime("%Y-%m-%d"),
+        "dias_no_vao": int(dias_no_vao),
+    }
+
+
+# Tonelagem acima da qual um embarque nao pode ser real. O maior graneleiro em
+# operacao carrega ~400 mil toneladas, entao meio milhao ja e impossivel para um
+# navio so. Corte FISICO, nao estatistico: um corte por desvio-padrao ou
+# percentil marcaria embarques legitimos e mudaria de resultado a cada rodada.
+LIMITE_TONELAGEM_NAVIO = 500_000
+
+
+def validar_tonelagem(df: pd.DataFrame) -> list[dict]:
+    """
+    Embarques com tonelagem fisicamente impossivel.
+
+    Existe por causa do EPIC RADIANCE (20/11/2025): o NABSA publicou 49.806.067 t
+    numa linha so — 5,3% de todo o historico de oito anos. O erro passou meses
+    sem ser notado porque nenhuma validacao olhava para a grandeza dos valores:
+    `detectar_gaps` conta dias, `validar_continuidade` compara bordas, e um
+    numero absurdo dentro de um dia que existe nao viola nenhuma das duas.
+
+    Como todas as escalas de grafico derivam do maximo, uma linha dessas achata
+    tudo de uma vez — serie mensal, sazonalidade e mix de cargas juntos.
+
+    Informa, nao levanta: validacao neste projeto nunca derruba o pipeline. O
+    conserto do caso ja conhecido mora em config/correcoes_sailed.csv; esta
+    funcao existe para o **proximo**, que ninguem ainda viu.
+    """
+    if df.empty or "Tons" not in df.columns:
+        return []
+
+    tons = pd.to_numeric(df["Tons"], errors="coerce")
+    suspeitas = df[tons > LIMITE_TONELAGEM_NAVIO]
+    if suspeitas.empty:
+        return []
+
+    achados = []
+    for registro in suspeitas.itertuples(index=False):
+        achado = {
+            "data": getattr(registro, "Date", None),
+            "navio": getattr(registro, "Vessel", None),
+            "carga": getattr(registro, "Cargo", None),
+            "destino": getattr(registro, "Destination", None),
+            "tons": float(registro.Tons),
+        }
+        achados.append(achado)
+        data = achado["data"]
+        data_txt = data.strftime("%d/%m/%Y") if hasattr(data, "strftime") else str(data)
+        logger.warning(
+            f"⚠️ Tonelagem impossivel: {achado['tons']:,.2f} t em {data_txt} "
+            f"({achado['navio'] or 'navio nao informado'}, {achado['carga'] or '?'} "
+            f"-> {achado['destino'] or '?'}). Acima do limite fisico de "
+            f"{LIMITE_TONELAGEM_NAVIO:,} t por navio. Confira na origem e, se "
+            f"confirmado, registre em config/correcoes_sailed.csv."
+        )
+    return achados
+
+
+def validar_corte_rodape(df: pd.DataFrame, path_original: str = "") -> None:
+    """
+    Validação extra: verifica se o DataFrame resultante do corte de rodapé
+    tem pelo menos dados até o penúltimo dia do mês mais recente.
+    Loga um warning se parecer que dados foram cortados prematuramente.
+    """
+    if df.empty:
+        logger.warning(f"DataFrame vazio após leitura de {path_original}")
+        return
+
+    ultima_data = df["Date"].max()
+    if pd.isna(ultima_data):
+        logger.warning("Coluna 'Date' não contém datas válidas após a leitura.")
+        return
+
+    # Se a última data é antes do dia 15 do mês, pode ser corte prematuro
+    if ultima_data.day < 15:
+        logger.warning(
+            f"⚠️ Última data no arquivo é {ultima_data.strftime('%d/%m/%Y')} — "
+            f"isso pode indicar corte prematuro pelo detector de rodapé. "
+            f"Verifique o arquivo-fonte manualmente."
+        )

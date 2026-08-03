@@ -1,5 +1,9 @@
 # Ambiente
 .env
+# Backups do .env contem credenciais em texto puro — nunca versionar
+.env.bak*
+.env.*.bak
+!.env.example
 __pycache__/
 *.py[cod]
 *.pyo
@@ -10,6 +14,9 @@ env/
 # Logs
 *.log
 logs/
+
+# Dados — downloads brutos, banco e snapshots. Gerados pelo pipeline.
+data/
 
 # Excel gerados
 *.xlsx

@@ -1,0 +1,213 @@
+"""
+pipelines/sailed.py
+-------------------
+Regra de negocio do fluxo Sailed: leitura do arquivo bruto do NABSA e merge
+periodo a periodo com a base.
+
+Nao escreve em lugar nenhum — persistencia mora em storage/.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from argentina_etl.logging_setup import logger
+
+COLUNAS = ["Date", "Destination", "Origin", "Cargo", "Tons", "Month", "Year"]
+
+# ---------------------------------------------------------------------------
+# Limpeza do arquivo bruto
+# ---------------------------------------------------------------------------
+
+def remover_colunas_sem_nome(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Descarta as colunas 'Unnamed: N' que o Excel arrasta para dentro da base.
+
+    A base tinha seis delas (13 a 18), reescritas a cada execucao porque o
+    merge as carregava adiante. Nao pertencem ao esquema: o Arg_Sailed do SQL
+    tem sete colunas e o pandas as inventa ao ler celulas vazias a direita dos
+    dados.
+
+    Nao remove em silencio. Se uma coluna sem nome tiver conteudo, o conteudo
+    vai para o log como WARNING antes de a coluna sair — foi assim que se
+    descobriu a anotacao 'ultima linha do banco do almyr' escondida na
+    'Unnamed: 18', na linha do PRABHU PUNI de 14/01/2020 (registrada na secao
+    10 do ESTRUTURA.md). Perder um dado por limpeza automatica seria
+    exatamente o tipo de falha silenciosa que este projeto ja pagou caro.
+    """
+    sem_nome = [c for c in df.columns if str(c).startswith("Unnamed:")]
+    if not sem_nome:
+        return df
+
+    for coluna in sem_nome:
+        preenchidas = df[coluna].notna()
+        if preenchidas.any():
+            valores = df.loc[preenchidas, coluna].astype(str).tolist()
+            logger.warning(
+                f"⚠️ Coluna sem nome '{coluna}' descartada, mas tinha "
+                f"{len(valores)} valor(es): {valores[:5]}"
+            )
+
+    logger.info(f"Colunas sem nome removidas da base: {sem_nome}")
+    return df.drop(columns=sem_nome)
+
+
+def _cortar_apos_duas_linhas_vazias(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove todas as linhas a partir de duas linhas consecutivas completamente vazias.
+    Isso elimina rodapés e notas de rodapé presentes nos arquivos originais.
+    """
+    empty = df.isna().all(axis=1)
+    for i in range(len(empty) - 1):
+        if empty.iloc[i] and empty.iloc[i + 1]:
+            logger.info(f"Rodapé detectado na linha {i} — descartando o restante.")
+            return df.iloc[:i].copy()
+    return df
+
+
+def ler_arquivo_novo(path: Path) -> pd.DataFrame:
+    """
+    Lê o arquivo Excel baixado, remove o rodapé e garante os tipos corretos.
+
+    O arquivo original tem 7 linhas de cabeçalho antes dos dados,
+    por isso usamos header=7.
+    """
+    logger.info(f"Lendo arquivo novo: {path.name}")
+    df = pd.read_excel(path, header=7, engine="openpyxl")
+    df = _cortar_apos_duas_linhas_vazias(df)
+
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["Month"] = df["Date"].dt.month
+    df["Year"] = df["Date"].dt.year
+
+    logger.info(f"  {len(df)} linhas carregadas | "
+                f"períodos: {sorted(df['Date'].dt.to_period('M').unique().astype(str))}")
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Merge com o banco
+# ---------------------------------------------------------------------------
+
+def merge_com_banco(df_novo: pd.DataFrame, db: pd.DataFrame) -> pd.DataFrame:
+    """
+    Atualiza o banco de forma inteligente, período a período.
+
+    A substituição é EM BLOCO: um período aceito tem o mês inteiro apagado do
+    banco e reinserido a partir do arquivo novo. Não há fusão linha a linha.
+    Por isso a decisão de aceitar precisa ser conservadora.
+
+    Para CADA período (mês/ano) presente no arquivo novo, duas condições — o
+    período só é substituído se passar nas DUAS:
+
+      1. **Volume**: o arquivo novo tem ≥ linhas que o banco.
+      2. **Cobertura**: o arquivo novo traz todos os dias que o banco já tem
+         naquele mês.
+
+    Períodos ausentes do arquivo novo nunca são tocados.
+
+    Aceitar com contagem IGUAL é intencional: o NABSA reformula parcelas sem
+    mudar o número de linhas (em 14/04/2026 o SAROCHA NAREE passou de
+    14.859,14 + 25.179,20 para 20.000,00 + 20.038,34, soma idêntica). Com `>`
+    no lugar de `>=`, correções da fonte nunca entrariam.
+
+    **Por que a condição 2 existe.** Até 2026-07-29 a trava olhava só a
+    contagem. Um arquivo com MAIS linhas porém MENOS dias — gordo no começo do
+    mês, vazio no fim — era aceito, e os dias do fim sumiam sem nenhum aviso:
+    depois da substituição `db_atualizado` fica idêntico ao arquivo novo, então
+    `detectar_gaps` compara os dois e não vê diferença, e `validar_continuidade`
+    também não pega, porque os dois começam no mesmo dia. Era o mesmo formato da
+    perda de 26-30/06/2026. Ver ESTRUTURA.md, decisão 9.4.
+
+    Trava de segurança obrigatória desde que a base voltou a ser reescrita a cada
+    execução: sem ela, um arquivo truncado do NABSA corromperia o mês inteiro de
+    forma permanente. Ver ESTRUTURA.md, decisão 9.1.
+    """
+    df_novo["Date"] = pd.to_datetime(df_novo["Date"])
+    db["Date"] = pd.to_datetime(db["Date"])
+
+    periodos_novos = df_novo["Date"].dt.to_period("M").unique()
+    logger.info(f"Períodos do arquivo novo: {sorted(periodos_novos.astype(str))}")
+
+    periodos_aceitos = []
+    periodos_rejeitados = []
+
+    for periodo in sorted(periodos_novos):
+        mes, ano = periodo.month, periodo.year
+
+        mask_novo = (df_novo["Date"].dt.month == mes) & (df_novo["Date"].dt.year == ano)
+        linhas_novo = mask_novo.sum()
+        dias_novo_set = set(df_novo.loc[mask_novo, "Date"].dt.day)
+        dias_novo = len(dias_novo_set)
+
+        mask_db = (db["Date"].dt.month == mes) & (db["Date"].dt.year == ano)
+        linhas_db = mask_db.sum()
+        dias_db_set = set(db.loc[mask_db, "Date"].dt.day)
+        dias_db = len(dias_db_set)
+
+        # Dias que existem no banco e NAO vieram no arquivo novo. Como a
+        # substituicao e em bloco, aceitar o periodo apagaria estes dias.
+        dias_perdidos = sorted(dias_db_set - dias_novo_set)
+
+        volume_ok = linhas_novo >= linhas_db
+        cobertura_ok = not dias_perdidos
+
+        if linhas_db == 0 or (volume_ok and cobertura_ok):
+            periodos_aceitos.append(periodo)
+            logger.info(
+                f"  {periodo}: ACEITO — novo={linhas_novo} linhas/{dias_novo} dias "
+                f"vs banco={linhas_db} linhas/{dias_db} dias"
+            )
+        else:
+            periodos_rejeitados.append(periodo)
+            # Dizer QUAL das duas condicoes falhou: as causas sao diferentes.
+            # Menos linhas costuma ser arquivo truncado no download; dias
+            # faltando costuma ser arquivo parcial do fim do mes.
+            if not volume_ok and not cobertura_ok:
+                motivo = f"tem menos linhas E perderia os dias {dias_perdidos}"
+            elif not volume_ok:
+                motivo = "tem menos linhas"
+            else:
+                motivo = f"perderia os dias {dias_perdidos} que existem no banco"
+            logger.warning(
+                f"  ⚠️ {periodo}: REJEITADO — novo={linhas_novo} linhas/{dias_novo} dias "
+                f"vs banco={linhas_db} linhas/{dias_db} dias: {motivo} "
+                f"→ mantendo dados do banco para não perder informação"
+            )
+
+    if periodos_rejeitados:
+        logger.warning(
+            f"⚠️ {len(periodos_rejeitados)} período(s) rejeitado(s) por ter menos dados: "
+            f"{[str(p) for p in periodos_rejeitados]}"
+        )
+
+    # Remove do banco apenas os períodos aceitos
+    if periodos_aceitos:
+        mascara_remover = db["Date"].dt.to_period("M").isin(periodos_aceitos)
+        linhas_removidas = mascara_remover.sum()
+        db_limpo = db[~mascara_remover].copy()
+        logger.info(f"Linhas removidas do banco (períodos aceitos): {linhas_removidas}")
+
+        mask_aceitos = df_novo["Date"].dt.to_period("M").isin(periodos_aceitos)
+        df_inserir = df_novo[mask_aceitos].copy()
+        db_atualizado = pd.concat([db_limpo, df_inserir], ignore_index=True)
+    else:
+        # Nada a inserir. Não concatenar: um DataFrame vazio tem colunas de dtype
+        # object e o concat converteria 'Date' para object, quebrando o .dt abaixo.
+        db_atualizado = db.copy()
+        logger.warning("Nenhum período aceito — banco mantido sem alterações.")
+
+    db_atualizado = db_atualizado.sort_values("Date").reset_index(drop=True)
+
+    # Garante Month e Year consistentes
+    db_atualizado["Month"] = db_atualizado["Date"].dt.month
+    db_atualizado["Year"] = db_atualizado["Date"].dt.year
+
+    linhas_adicionadas = len(db_atualizado) - len(db)
+    logger.info(f"Linhas líquidas adicionadas ao banco: {linhas_adicionadas}")
+    logger.info(f"Total de linhas no banco atualizado: {len(db_atualizado)}")
+
+    return db_atualizado
+
+

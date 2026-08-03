@@ -1,0 +1,1 @@
+DROP VIEW VW_Lineup_Analise_Comparativa

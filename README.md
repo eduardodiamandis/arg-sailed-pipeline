@@ -1,162 +1,140 @@
-# Argentina Sailed — Data Pipeline
+# Argentina ETL
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![Status](https://img.shields.io/badge/status-active-success)
-![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
-![License](https://img.shields.io/badge/license-private-lightgrey)
+Pipeline diário que consolida dados de embarques de navios na Argentina, a partir
+dos boletins do NABSA, e distribui o resultado em três destinos: SQL Server,
+planilha no SharePoint e relatório por e-mail.
 
-Automated data pipeline for Argentina grain shipment tracking, responsible for downloading, processing, merging, and persisting shipment data across multiple storage layers.
-
----
-
-## Overview
-
-This pipeline ensures data consistency and idempotency when handling monthly shipment updates, even when partial or overlapping datasets are ingested.
-
-Key features:
-- Incremental and safe monthly merge logic
-- Multi-destination persistence (Excel, OneDrive, SQL Server)
-- Automated logging with rotation
-- Fully testable merge layer
+Roda desatendido, uma vez por noite, pela tarefa agendada `new_sailed_task`.
 
 ---
 
-## Project Structure
-argentina_sailed/
-├── main.py # Orchestrator — entry point
-├── src/
-│ ├── config.py # Environment configuration (.env)
-│ ├── logger_config.py # Logging setup
-│ ├── downloader.py # HTTP data downloader
-│ ├── latest_file.py # Latest backup file resolver
-│ └── database.py # Core logic (transform + merge + persist)
-├── tests/
-│ └── test_database.py # Unit tests (merge logic)
-├── .env.example # Environment template
-├── .env # Local config (ignored)
-├── .gitignore
-└── requirements.txt
-
-
----
-
-## Pipeline Flow
-
-    ┌───────────────┐
-    │ Sailed Data   │
-    └──────┬────────┘
-           │
-    ┌──────▼────────┐
-    │ Line-Up Data  │
-    └──────┬────────┘
-           │
-    ┌──────▼──────────────┐
-    │ Latest File Resolver│
-    └──────┬──────────────┘
-           │
-    ┌──────▼──────────────┐
-    │ Existing Database   │
-    └──────┬──────────────┘
-           │
-    ┌──────▼──────────────┐
-    │ merge_com_banco()   │
-    └──────┬──────────────┘
-           │
-
-┌───────────┼───────────────┐
-▼ ▼ ▼
-Local Excel OneDrive SQL Server
-+ Pivot Tables
-
-
----
-
-## Merge Strategy
-
-The pipeline is designed to handle partial and multi-month updates safely.
-
-### How it works
-
-- The incoming dataset may contain multiple months  
-  (e.g., Jan + Feb + partial Mar 2026)
-
-- The function `merge_com_banco()`:
-  1. Detects all `(month, year)` combinations in the new data
-  2. Removes matching periods from the existing database
-  3. Inserts the new records
-
-### Guarantees
-
-- No duplicated data (idempotent execution)
-- Historical data is preserved
-- Supports manual multi-month corrections
-- Safe to run multiple times per day
-
----
-
-## Setup
+## Como rodar
 
 ```bash
-# Clone repository
-git clone <your-repo-url>
-cd argentina_sailed
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Fill in credentials and paths
-
-# Run pipeline
 python main.py
-Tests
-pytest tests/ -v
+```
 
-Focus:
+Ou, equivalente:
 
-Merge correctness
+```bash
+python -m argentina_etl
+```
 
-Edge cases (partial months, overlaps, reprocessing)
+`main.py` na raiz é apenas um *shim*: coloca `src/` no path e delega para
+`argentina_etl.__main__`. Existe para que a tarefa agendada continue funcionando
+sem alteração — ela chama `python.exe main.py` com `WorkingDirectory` na raiz.
 
-Outputs
-Destination	Description
-Local Excel	Arg_sailed_database_AT.xlsx (sheet data_base)
-OneDrive	Full dataset + yearly sheets + pivot tables
-SQL Server	[dbo].[Arg_Sailed] fully updated
-Logging
+## Instalação
 
-Path:
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env      # e preencha
+```
 
-C:\Users\server\Desktop\Argentina\logs\argentina_updater.log
+Todas as variáveis obrigatórias precisam estar no `.env`: `config.py` levanta
+`EnvironmentError` na inicialização se faltar alguma. O `.env.example` documenta
+cada uma.
 
-Rotation:
+**Não é necessário ter Excel instalado.** Até 2026-07-28 as pivot tables eram
+geradas por automação COM; hoje são calculadas com pandas.
 
-5 MB per file
+## Testes
 
-3 backup files retained
+```bash
+pytest
+```
 
-Environment Variables
+125 testes, todos passando. Nenhuma falha conhecida — se algum ficar vermelho,
+é sinal, não ruído.
 
-Configured via .env file:
+---
 
-Example:
+## Estrutura
 
-DB_CONNECTION_STRING=...
-ONEDRIVE_PATH=...
-DOWNLOAD_URL=...
-Future Improvements
+```
+sailed_auto/
+├── main.py                      shim de entrada
+├── .env                         configuração (nunca versionado)
+├── requirements.txt  pytest.ini
+│
+├── src/argentina_etl/
+│   ├── __main__.py              orquestrador — só a sequência de etapas
+│   ├── config.py                única leitura do .env
+│   ├── logging_setup.py         logger compartilhado
+│   ├── downloader.py            Selenium headless → data/raw/
+│   ├── validation.py            continuidade, gaps, corte de rodapé
+│   │
+│   ├── pipelines/               regra de negócio: o que os dados devem ser
+│   │   ├── sailed.py            leitura do arquivo bruto e merge
+│   │   └── lineup.py            leitura e classificação de status
+│   │
+│   ├── storage/                 persistência: escreve o que recebeu
+│   │   ├── excel.py             arquivo local
+│   │   ├── onedrive.py          planilha + sheets derivadas + pivots
+│   │   ├── sharepoint.py        publicação via Microsoft Graph API
+│   │   └── sql_server.py        Arg_Sailed e Arg_Lineup
+│   │
+│   ├── reporting/report.py      relatório HTML por e-mail
+│   └── utils/files.py           utilitários
+│
+├── tests/                       125 testes
+├── sql/                         DDL e views
+├── docs/                        documentos operacionais
+│
+├── data/                        ►► gitignored ◄◄
+│   ├── raw/{sailed,lineup}/     downloads brutos do NABSA
+│   ├── db/                      banco principal
+│   └── archive/                 snapshots datados
+└── logs/                        ►► gitignored ◄◄
+```
 
-Docker containerization
+A divisão que mais importa é **`pipelines/` vs `storage/`**: `pipelines/` decide o
+que os dados devem ser; `storage/` só escreve o que recebeu. Se um módulo de
+`storage/` precisa consultar regra de negócio, está no lugar errado.
 
-CI/CD pipeline (GitHub Actions)
+## Fluxo
 
-Data validation layer (schema enforcement)
+| Etapa | O que faz |
+|---|---|
+| 1 | Baixa Sailed e Line-Up via Chrome headless |
+| 1b | Grava o snapshot diário do Line-Up em `Arg_Lineup` (append-only) |
+| 2 | Lê o arquivo mais recente e valida o corte de rodapé |
+| 3 | Lê o banco existente |
+| 4 | Merge período a período, com trava de segurança, e validações |
+| 5 | Salva local, no OneDrive (com pivots) e no SQL Server |
+| 5b | Publica no SharePoint via Microsoft Graph — **só se `GRAPH_UPLOAD_ENABLED=true`** |
+| 6 | Envia o relatório por e-mail |
 
-Monitoring and alerting (Slack / Email)
+### Duas regras que não devem ser alteradas sem entender
 
-Cloud migration (AWS / Azure)
+**A trava do merge.** A substituição é **em bloco**: um período aceito tem o mês
+inteiro apagado e reinserido a partir do arquivo novo. Por isso ele só é aceito se
+passar em **duas** condições — **volume** (tem ≥ linhas que o banco) e **cobertura**
+(traz todos os dias que o banco já tem naquele mês). Sem a primeira, um arquivo
+truncado do NABSA corromperia o mês inteiro, de forma permanente, já que a base é
+reescrita a cada execução. Sem a segunda, um arquivo gordo no começo do mês e vazio
+no fim apagaria os últimos dias sem que nenhuma validação avisasse. Contagem igual é
+aceita de propósito: a fonte reformula parcelas sem mudar o número de linhas.
+Ver `ESTRUTURA.md`, decisões 9.1 e 9.4.
 
-Author
+**`fast_executemany = False` no Line-Up.** O driver legado `SQL Server` rejeita
+valores `None` com o modo rápido ligado. No Sailed pode ficar `True`.
 
-Eduardo Diamandis
+## Documentação
+
+| Arquivo | Assunto |
+|---|---|
+| `README.md` | este — instalação e execução |
+| `ARQUITETURA.md` | como o pipeline funciona por dentro |
+| `ESTRUTURA.md` | onde cada coisa mora, e por quê |
+| `CLAUDE.md` | instruções para o Claude Code |
+| `docs/` | documentos operacionais |
+
+## Convenções
+
+- Docstrings e mensagens de log em **português**
+- `from __future__ import annotations` no topo de todo módulo
+- Nenhum path, URL ou credencial fora do `.env`
+- SQL Server por autenticação Windows; nunca senha em código
