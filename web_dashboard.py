@@ -29,7 +29,16 @@ from flask import Flask, abort, jsonify, render_template_string, request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from argentina_etl.config import PATH_DATABASE_OUTPUT  # reutiliza o .env já carregado
+# PATH_DATABASE, nao PATH_DATABASE_OUTPUT. A primeira e a base viva, relida e
+# reescrita a cada rodada. A segunda e apenas o radical dos snapshots datados do
+# archive: o __main__ deriva dela nomes como Arg_sailed_database_AT_<data>_<hora>
+# via with_stem(), e o arquivo sem timestamp nunca chega a ser gravado.
+#
+# Apontar para ela era o bug: _load_db() levava FileNotFoundError, engolia a
+# excecao e devolvia None, entao esta pagina exibia "nao encontrado" e uma tabela
+# vazia desde sempre — sem nenhum erro visivel que denunciasse a causa.
+from argentina_etl.config import PATH_DATABASE  # reutiliza o .env já carregado
+from argentina_etl.logging_setup import logger
 
 ALLOWED_SUBNET = "192.168.16."   # só IPs que começam com isso
 MAIN_SCRIPT    = Path(__file__).parent / "main.py"
@@ -220,9 +229,19 @@ function filterTable() {
 # ---------------------------------------------------------------------------
 
 def _load_db() -> pd.DataFrame | None:
+    """
+    Le a base para exibicao. Devolve None quando nao consegue.
+
+    O `except` continua aqui de proposito — uma pagina de leitura nao deve
+    devolver 500 porque a planilha esta aberta no Excel — mas agora ele
+    **registra** a causa. Engolir a excecao calado foi o que escondeu o bug do
+    path por tanto tempo: a pagina dizia apenas "nao encontrado", que e
+    indistinguivel de "o arquivo ainda nao foi gerado".
+    """
     try:
-        return pd.read_excel(PATH_DATABASE_OUTPUT, sheet_name="data_base", engine="openpyxl")
-    except Exception:
+        return pd.read_excel(PATH_DATABASE, sheet_name="data_base", engine="openpyxl")
+    except Exception as erro:
+        logger.error(f"Dashboard intranet: falha ao ler {PATH_DATABASE}: {erro}")
         return None
 
 
@@ -258,7 +277,7 @@ def index():
         else:
             last_updated = "—"
 
-        db_file = PATH_DATABASE_OUTPUT.name
+        db_file = PATH_DATABASE.name
 
     status_msg = "⏳ Em execução…" if _pipeline_running else "Pronto"
 
