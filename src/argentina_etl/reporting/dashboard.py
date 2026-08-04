@@ -44,7 +44,12 @@ TOPO_CARGAS = 12
 TOPO_DESTINOS = 15
 TOPO_TERMINAIS = 20
 
-ROTULO_OUTROS = "OUTROS"
+# Rotulo do balde de cauda longa. Aparece na tela, entao acompanha o idioma da
+# interface (ingles). Vai no payload como `rotuloResiduo`: a pagina precisa saber
+# qual e o rotulo para nao deixa-lo disputar posicao num ranking de destinos nem
+# virar uma segunda fatia cinza no mix — e ler daqui e melhor do que repetir a
+# string no template, onde as duas poderiam divergir em silencio.
+ROTULO_OUTROS = "OTHER"
 
 # Mesmo limite fisico usado pela validacao do pipeline — uma fonte so, para os
 # dois nao divergirem. As linhas acima dele saem das agregacoes e vao inteiras
@@ -225,6 +230,7 @@ def agregar_sailed(df: pd.DataFrame) -> dict:
         },
         "anomalias": anomalias,
         "limiteTonelagem": LIMITE_TONELAGEM_NAVIO,
+        "rotuloResiduo": ROTULO_OUTROS,
     }
 
 

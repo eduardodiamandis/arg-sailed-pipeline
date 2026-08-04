@@ -94,17 +94,78 @@ html, body { margin:0; padding:0; }
 }
 .campo { display:flex; flex-direction:column; gap:4px; }
 .campo > label { font-size:11px; color:var(--tinta-3); text-transform:uppercase; letter-spacing:.04em; }
-.campo select, .campo input {
+/* Filho direto, nao descendente: o multi-select aninha os proprios inputs dentro
+   de .campo, e um seletor descendente impunha min-width:130px aos checkboxes —
+   cada um virava uma caixa de 130px, empurrando o rotulo para longe e criando
+   rolagem horizontal no painel. */
+.campo > select, .campo > input {
   font:inherit; font-size:13px; padding:6px 9px; border-radius:7px;
   border:1px solid var(--borda); background:var(--superficie); color:var(--tinta-1);
   min-width:130px;
 }
-.campo select:focus-visible, .campo input:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.campo > select:focus-visible, .campo > input:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
 .limpar {
   appearance:none; font:inherit; font-size:12px; cursor:pointer; color:var(--tinta-2);
   background:none; border:1px solid var(--borda); border-radius:7px; padding:6px 11px;
 }
 .limpar:hover { background:var(--realce); }
+
+/* --- Seleção múltipla ----------------------------------------------------
+   O <select multiple> nativo exige ctrl+clique e esconde o que está marcado
+   atrás de rolagem. Estes estilos deliberadamente copiam os do .campo select
+   para que os dois tipos de filtro leiam como o mesmo controle na mesma linha.
+   -------------------------------------------------------------------------- */
+.ms { position:relative; }
+.ms-botao {
+  font:inherit; font-size:13px; padding:6px 26px 6px 9px; border-radius:7px;
+  border:1px solid var(--borda); background:var(--superficie); color:var(--tinta-1);
+  min-width:150px; max-width:230px; cursor:pointer; text-align:left; width:100%;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ms-botao::after {
+  content:''; position:absolute; right:10px; top:50%; width:0; height:0;
+  border-left:4px solid transparent; border-right:4px solid transparent;
+  border-top:5px solid var(--tinta-3); transform:translateY(-2px); pointer-events:none;
+}
+.ms-botao:hover { background:var(--realce); }
+.ms-botao:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.ms-botao[aria-expanded="true"] { border-color:var(--serie-1); }
+
+.ms-painel {
+  position:absolute; z-index:40; top:calc(100% + 4px); left:0; min-width:100%;
+  width:max-content; max-width:320px;
+  background:var(--superficie); border:1px solid var(--borda); border-radius:9px;
+  box-shadow:0 6px 22px rgba(0,0,0,.16); padding:7px; display:none;
+}
+.ms-painel.on { display:block; }
+.ms-busca {
+  font:inherit; font-size:12.5px; width:100%; padding:5px 8px; margin-bottom:5px;
+  border:1px solid var(--borda); border-radius:6px;
+  background:var(--plano); color:var(--tinta-1);
+}
+.ms-busca:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.ms-acoes { display:flex; gap:6px; margin-bottom:5px; }
+.ms-acoes button {
+  appearance:none; font:inherit; font-size:11px; cursor:pointer; color:var(--tinta-2);
+  background:none; border:1px solid var(--borda); border-radius:6px; padding:3px 8px; flex:1;
+}
+.ms-acoes button:hover { background:var(--realce); }
+.ms-acoes button:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.ms-lista { max-height:240px; overflow-y:auto; }
+.ms-item {
+  display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:6px;
+  font-size:12.5px; color:var(--tinta-1); cursor:pointer; white-space:nowrap;
+}
+.ms-item:hover { background:var(--realce); }
+/* Dimensao explicita: o checkbox nao pode depender de nao herdar largura de
+   outra regra. Foi exatamente assim que ele virou uma caixa de 130px. */
+.ms-item input {
+  accent-color:var(--serie-1); cursor:pointer; flex:none; margin:0;
+  width:14px; height:14px; min-width:0; padding:0;
+}
+.ms-item span { flex:1 1 auto; }
+.ms-item:focus-within { outline:2px solid var(--serie-1); outline-offset:-2px; }
+.ms-vazio { padding:8px 7px; font-size:12px; color:var(--tinta-3); }
 
 /* --- Layout F -----------------------------------------------------------
    Barra de KPIs no topo (primeira varredura), grafico largo abaixo (segunda
@@ -214,30 +275,21 @@ svg { display:block; width:100%; overflow:visible; }
   </div>
 
   <div class="abas" role="tablist">
-    <button class="aba" role="tab" id="aba-op"   aria-selected="false" aria-controls="pg-op">Operacional — Line-Up</button>
-    <button class="aba" role="tab" id="aba-hist" aria-selected="true"  aria-controls="pg-hist">Histórico — Sailed</button>
+    <button class="aba" role="tab" id="aba-op"   aria-selected="false" aria-controls="pg-op">Operations — Line-Up</button>
+    <button class="aba" role="tab" id="aba-hist" aria-selected="true"  aria-controls="pg-hist">History — Sailed</button>
   </div>
 
   <!-- ===================== PÁGINA 1 — OPERACIONAL ===================== -->
   <section class="pagina" id="pg-op" role="tabpanel" aria-labelledby="aba-op">
     <div class="filtros">
+      <div class="campo" id="f-porto"></div>
+      <div class="campo" id="f-status"></div>
+      <div class="campo" id="f-commodity"></div>
       <div class="campo">
-        <label for="f-porto">Porto</label>
-        <select id="f-porto"></select>
+        <label for="f-busca">Search vessel / terminal</label>
+        <input type="text" id="f-busca" placeholder="e.g. RENOVA" autocomplete="off">
       </div>
-      <div class="campo">
-        <label for="f-status">Status</label>
-        <select id="f-status"></select>
-      </div>
-      <div class="campo">
-        <label for="f-commodity">Carga</label>
-        <select id="f-commodity"></select>
-      </div>
-      <div class="campo">
-        <label for="f-busca">Buscar navio / terminal</label>
-        <input type="text" id="f-busca" placeholder="ex.: RENOVA" autocomplete="off">
-      </div>
-      <button class="limpar" id="f-limpar-op">Limpar</button>
+      <button class="limpar" id="f-limpar-op">Clear</button>
     </div>
 
     <div class="kpis" id="kpis-op"></div>
@@ -262,22 +314,19 @@ svg { display:block; width:100%; overflow:visible; }
   <section class="pagina ativa" id="pg-hist" role="tabpanel" aria-labelledby="aba-hist">
     <div class="filtros">
       <div class="campo">
-        <label for="f-ano-ini">Ano inicial</label>
+        <label for="f-ano-ini">From year</label>
         <select id="f-ano-ini"></select>
       </div>
       <div class="campo">
-        <label for="f-ano-fim">Ano final</label>
+        <label for="f-ano-fim">To year</label>
         <select id="f-ano-fim"></select>
       </div>
       <div class="campo">
-        <label for="f-mes">Mês</label>
+        <label for="f-mes">Month</label>
         <select id="f-mes"></select>
       </div>
-      <div class="campo">
-        <label for="f-carga">Carga</label>
-        <select id="f-carga"></select>
-      </div>
-      <button class="limpar" id="f-limpar-hist">Limpar</button>
+      <div class="campo" id="f-carga"></div>
+      <button class="limpar" id="f-limpar-hist">Clear</button>
     </div>
 
     <div id="aviso-anomalia"></div>
@@ -300,9 +349,16 @@ svg { display:block; width:100%; overflow:visible; }
   </section>
 
   <div class="rodape" id="rodape"></div>
-</div>
 
-<div id="dica" role="status" aria-live="polite"></div>
+  <!-- A dica precisa ficar DENTRO do .raiz. Os tokens de cor (--superficie,
+       --borda, --tinta-1) sao definidos no .raiz, e variavel CSS so desce para
+       descendente: fora dele, `background: var(--superficie)` nao resolve e o
+       balao fica com fundo transparente e texto preto por cima do grafico —
+       ilegivel, e pior ainda no tema escuro. Continua `position: fixed` e
+       ancorada na viewport, porque o .raiz nao cria contexto de posicionamento
+       (sem transform, filter ou contain). -->
+  <div id="dica" role="status" aria-live="polite"></div>
+</div>
 
 <script>
 "use strict";
@@ -311,8 +367,8 @@ const DADOS = /*__PAYLOAD__*/;
 /* ===========================================================================
    Utilidades
    =========================================================================== */
-const nf  = new Intl.NumberFormat('pt-BR');
-const nf1 = new Intl.NumberFormat('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1});
+const nf  = new Intl.NumberFormat('en-US');
+const nf1 = new Intl.NumberFormat('en-US', {minimumFractionDigits:1, maximumFractionDigits:1});
 
 /** Tonelagem legivel: Mt acima de um milhao, kt acima de mil. */
 function fmtT(v) {
@@ -323,18 +379,37 @@ function fmtT(v) {
   return nf.format(Math.round(v)) + ' t';
 }
 function fmtN(v) { return v == null || isNaN(v) ? '—' : nf.format(v); }
+
+/**
+ * Data por extenso curto: 'Aug 4, 2026'.
+ *
+ * en-US numerico (8/4/2026) foi evitado de proposito. Quem opera nesta regiao
+ * le dia primeiro, entao 08/04 seria lido como 8 de abril metade das vezes — e
+ * um erro de leitura de data nao se denuncia sozinho. O mes escrito e igualmente
+ * en-US e nao tem como ser lido errado.
+ */
 function fmtData(iso) {
   if (!iso) return '—';
   const p = String(iso).slice(0,10).split('-');
-  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+  if (p.length !== 3) return iso;
+  return `${MESES[+p[1]-1]} ${+p[2]}, ${p[0]}`;
 }
-const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-const NOME_MES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-// Rotulo do balde de cauda longa criado no Python. Nao e uma entidade: nao pode
-// disputar posicao num ranking de destinos nem virar uma serie do mix.
-const RESIDUO = 'OUTROS';
+/** Forma compacta para eixos e colunas estreitas: 'Aug 4'. */
+function fmtDataCurta(iso) {
+  if (!iso) return '—';
+  const p = String(iso).slice(0,10).split('-');
+  return p.length === 3 ? `${MESES[+p[1]-1]} ${+p[2]}` : iso;
+}
+
+const MESES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const NOME_MES = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+// Rotulo do balde de cauda longa. Vem do payload, e nao de uma constante local,
+// porque quem o cria e o Python: repetir a string aqui deixaria as duas livres
+// para divergir, e o residuo voltaria calado a disputar posicao nos rankings.
+const RESIDUO = (DADOS.sailed && DADOS.sailed.rotuloResiduo) || 'OTHER';
 
 /**
  * Corta rotulo que nao cabe na calha, com reticencia.
@@ -345,6 +420,147 @@ function cortar(txt, larguraPx) {
   const s = String(txt == null ? '—' : txt);
   const max = Math.max(6, Math.floor((larguraPx - 10) / 6.15));
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
+}
+
+/* ---------------------------------------------------------------------------
+   Seleção múltipla
+   --------------------------------------------------------------------------- */
+
+// Acima disto o painel ganha campo de busca. Commodity tem ~28 opcoes e precisa;
+// Status tem 4 e um campo de busca so atrapalharia.
+const MS_LIMIAR_BUSCA = 12;
+
+// Todos os paineis abertos, para que abrir um feche os outros e um clique em
+// qualquer lugar da pagina feche todos.
+const MS_ABERTOS = new Set();
+
+/**
+ * Dropdown de checkboxes.
+ *
+ * **Conjunto vazio significa "todos".** Nao ha sentinela do tipo '__TODAS__':
+ * com ela, cada ponto de filtro precisaria de um caso especial, e sao nove.
+ * Vazio-e-todos deixa o predicado em uma linha: `sel.size === 0 || sel.has(x)`.
+ *
+ * `opcoes` = [{valor, nome}]. Os nomes vem do arquivo do NABSA, ou seja, sao
+ * dados nao confiaveis — entram por textContent, nunca por innerHTML.
+ */
+function criarMultiSelect(host, opc) {
+  const {rotulo, opcoes, plural, onChange} = opc;
+  const sel = new Set();
+  const id = 'ms-' + Math.random().toString(36).slice(2, 9);
+
+  host.textContent = '';
+  host.appendChild(el('label', null, rotulo));
+
+  const caixa = el('div', 'ms');
+  const botao = el('button', 'ms-botao');
+  botao.type = 'button';
+  botao.setAttribute('aria-haspopup', 'true');
+  botao.setAttribute('aria-expanded', 'false');
+  botao.setAttribute('aria-controls', id);
+  caixa.appendChild(botao);
+
+  const painel = el('div', 'ms-painel');
+  painel.id = id;
+  caixa.appendChild(painel);
+  host.appendChild(caixa);
+
+  let busca = null;
+  if (opcoes.length > MS_LIMIAR_BUSCA) {
+    busca = el('input', 'ms-busca');
+    busca.type = 'text';
+    busca.placeholder = 'Search…';
+    painel.appendChild(busca);
+  }
+
+  const acoes = el('div', 'ms-acoes');
+  const btTodos = el('button', null, 'Select all');
+  const btNada = el('button', null, 'Clear');
+  [btTodos, btNada].forEach(b => { b.type = 'button'; acoes.appendChild(b); });
+  painel.appendChild(acoes);
+
+  const lista = el('div', 'ms-lista');
+  painel.appendChild(lista);
+
+  function resumo() {
+    if (sel.size === 0) return `All ${plural}`;
+    if (sel.size === 1) {
+      const unico = opcoes.find(o => sel.has(o.valor));
+      return unico ? unico.nome : `1 ${plural}`;
+    }
+    return `${sel.size} ${plural}`;
+  }
+
+  function pintarBotao() {
+    botao.textContent = resumo();
+    botao.title = sel.size ? opcoes.filter(o => sel.has(o.valor)).map(o => o.nome).join(', ')
+                           : `All ${plural}`;
+  }
+
+  function pintarLista() {
+    const termo = busca ? busca.value.trim().toLowerCase() : '';
+    const visiveis = opcoes.filter(o => !termo || o.nome.toLowerCase().includes(termo));
+    lista.textContent = '';
+    if (!visiveis.length) {
+      lista.appendChild(el('div', 'ms-vazio', 'No match'));
+      return;
+    }
+    visiveis.forEach(o => {
+      const item = el('label', 'ms-item');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = sel.has(o.valor);
+      cb.addEventListener('change', () => {
+        if (cb.checked) sel.add(o.valor); else sel.delete(o.valor);
+        pintarBotao();
+        onChange(new Set(sel));
+      });
+      item.appendChild(cb);
+      item.appendChild(el('span', null, o.nome));
+      lista.appendChild(item);
+    });
+  }
+
+  function abrir(sim) {
+    painel.classList.toggle('on', sim);
+    botao.setAttribute('aria-expanded', String(sim));
+    if (sim) {
+      MS_ABERTOS.forEach(f => { if (f !== abrir) f(false); });
+      MS_ABERTOS.add(abrir);
+      pintarLista();
+      if (busca) { busca.value = ''; busca.focus(); }
+    } else {
+      MS_ABERTOS.delete(abrir);
+    }
+  }
+
+  botao.addEventListener('click', ev => {
+    ev.stopPropagation();
+    abrir(!painel.classList.contains('on'));
+  });
+  painel.addEventListener('click', ev => ev.stopPropagation());
+  if (busca) busca.addEventListener('input', pintarLista);
+
+  btTodos.addEventListener('click', () => {
+    // "Select all" volta ao conjunto vazio de proposito: marcar tudo e nao
+    // filtrar nada sao o mesmo resultado, e o vazio e o estado que os
+    // predicados entendem como "todos".
+    sel.clear(); pintarBotao(); pintarLista(); onChange(new Set(sel));
+  });
+  btNada.addEventListener('click', () => {
+    sel.clear(); pintarBotao(); pintarLista(); onChange(new Set(sel));
+  });
+
+  document.addEventListener('click', () => abrir(false));
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && painel.classList.contains('on')) { abrir(false); botao.focus(); }
+  });
+
+  pintarBotao();
+  return {
+    ler: () => new Set(sel),
+    limpar: () => { sel.clear(); pintarBotao(); pintarLista(); },
+  };
 }
 
 /** Cria elemento SVG. */
@@ -426,7 +642,7 @@ function cartao(host, titulo, sub) {
   host.textContent = '';
   const head = el('header');
   head.appendChild(el('h2', null, titulo));
-  const bt = el('button','alt','Tabela');
+  const bt = el('button','alt','Table');
   bt.type = 'button';
   head.appendChild(bt);
   host.appendChild(head);
@@ -440,7 +656,7 @@ function cartao(host, titulo, sub) {
     const mostrandoTabela = !tab.classList.contains('oculto');
     tab.classList.toggle('oculto', mostrandoTabela);
     graf.classList.toggle('oculto', !mostrandoTabela);
-    bt.textContent = mostrandoTabela ? 'Tabela' : 'Gráfico';
+    bt.textContent = mostrandoTabela ? 'Table' : 'Chart';
   });
   return { graf, tab };
 }
@@ -448,7 +664,7 @@ function cartao(host, titulo, sub) {
 /** Tabela simples a partir de colunas e linhas. */
 function tabela(host, colunas, linhas) {
   host.textContent = '';
-  if (!linhas.length) { host.appendChild(el('div','vazio','Sem dados no filtro atual.')); return; }
+  if (!linhas.length) { host.appendChild(el('div','vazio','No data for the current filter.')); return; }
   const wrap = el('div','rolagem');
   const t = el('table');
   const thead = el('thead'), tr = el('tr');
@@ -480,7 +696,7 @@ function legenda(host, itens) {
 }
 function vazio(host, msg) {
   host.textContent = '';
-  host.appendChild(el('div','vazio', msg || 'Sem dados no filtro atual.'));
+  host.appendChild(el('div','vazio', msg || 'No data for the current filter.'));
 }
 
 /* ===========================================================================
@@ -505,7 +721,7 @@ function barrasH(host, dados, opc) {
   const cor = opc.cor || 'var(--serie-1)';
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${alt}`, height:alt, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Gráfico de barras');
+  s.setAttribute('aria-label', opc.titulo || 'Bar chart');
 
   dados.forEach((d, i) => {
     const y = i * linhaAlt, h = Math.min(18, linhaAlt - 9);
@@ -544,7 +760,7 @@ function barrasH(host, dados, opc) {
 function linhaTempo(host, pontos, opc) {
   opc = opc || {};
   host.textContent = '';
-  if (pontos.length < 2) { vazio(host, 'Período curto demais para uma série.'); return; }
+  if (pontos.length < 2) { vazio(host, 'Period too short to plot a series.'); return; }
 
   const W = larguraDe(host, 700), H = opc.altura || 210;
   const m = {t:12, r:16, b:26, l:56};
@@ -556,7 +772,7 @@ function linhaTempo(host, pontos, opc) {
   const Y = v => m.t + ph - (v/topo)*ph;
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Série temporal');
+  s.setAttribute('aria-label', opc.titulo || 'Time series');
 
   tk.forEach(v => {
     s.appendChild(sv('line', {x1:m.l, x2:m.l+pw, y1:Y(v), y2:Y(v), class:'linha-grade'}));
@@ -609,8 +825,8 @@ function linhaTempo(host, pontos, opc) {
     cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('opacity', 1);
     foco.setAttribute('cx', X(i)); foco.setAttribute('cy', Y(p.valor)); foco.setAttribute('opacity', 1);
     mostrarDica(ev, p.rotuloLongo || p.rotulo, [
-      {cor:'var(--serie-1)', traco:true, valor: fmtT(p.valor), nome:'embarcado'},
-      p.n != null ? {valor: fmtN(p.n), nome:'embarques'} : null
+      {cor:'var(--serie-1)', traco:true, valor: fmtT(p.valor), nome:'shipped'},
+      p.n != null ? {valor: fmtN(p.n), nome:'sailings'} : null
     ].filter(Boolean));
   });
   capt.addEventListener('pointerleave', () => {
@@ -638,7 +854,7 @@ function empilhadaH(host, linhas, series, opc) {
   const VAO = 2;
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${alt}`, height:alt, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Barras empilhadas');
+  s.setAttribute('aria-label', opc.titulo || 'Stacked bars');
 
   linhas.forEach((l, i) => {
     const y = i*linhaAlt, h = Math.min(19, linhaAlt-11), cy = y + (linhaAlt-h)/2;
@@ -655,7 +871,7 @@ function empilhadaH(host, linhas, series, opc) {
       seg.style.fill = se.cor;
       seg.addEventListener('pointerenter', ev => mostrarDica(ev, l.nome, [
         {cor:se.cor, valor: fmtT(v), nome: se.nome},
-        {valor: fmtT(l.total), nome:'total do porto'}
+        {valor: fmtT(l.total), nome:'port total'}
       ]));
       seg.addEventListener('pointermove', posDica);
       seg.addEventListener('pointerleave', esconderDica);
@@ -687,7 +903,7 @@ function empilhadaV(host, colunas, series, opc) {
   const VAO = 2;
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Colunas empilhadas');
+  s.setAttribute('aria-label', opc.titulo || 'Stacked columns');
 
   tk.forEach(v => {
     const y = m.t+ph-(v/topo)*ph;
@@ -709,8 +925,8 @@ function empilhadaV(host, colunas, series, opc) {
       const seg = sv('rect', {x:cx-larg/2, y, width:larg, height:Math.max(1,h-VAO), rx:1.5});
       seg.style.fill = se.cor;
       seg.addEventListener('pointerenter', ev => mostrarDica(ev, `${c.nome} · ${se.nome}`, [
-        {cor:se.cor, valor: fmtT(v), nome:'embarcado'},
-        {valor: (c.total ? (v/c.total*100).toFixed(1).replace('.',',') : '0') + '%', nome:'do ano'}
+        {cor:se.cor, valor: fmtT(v), nome:'shipped'},
+        {valor: (c.total ? (v/c.total*100).toFixed(1).replace('.',',') : '0') + '%', nome:'of the year'}
       ]));
       seg.addEventListener('pointermove', posDica);
       seg.addEventListener('pointerleave', esconderDica);
@@ -741,7 +957,7 @@ function heatmap(host, matriz, anos, opc) {
   anos.forEach(a => MESES.forEach((_,mi) => { const v = (matriz[a]||{})[mi+1] || 0; if (v > max) max = v; }));
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Mapa de calor por ano e mês');
+  s.setAttribute('aria-label', opc.titulo || 'Heat map by year and month');
 
   MESES.forEach((mn, mi) => {
     const t = sv('text', {x: esqLarg + cellW*mi + cellW/2, y: 12, 'text-anchor':'middle', class:'rotulo-eixo'});
@@ -767,7 +983,7 @@ function heatmap(host, matriz, anos, opc) {
         cel.style.fill = RAMPA[passo];
       }
       cel.addEventListener('pointerenter', ev => mostrarDica(ev, `${mn}/${a}`, [
-        {valor: v > 0 ? fmtT(v) : 'sem embarque', nome: v > 0 ? 'embarcado' : ''}
+        {valor: v > 0 ? fmtT(v) : 'no shipments', nome: v > 0 ? 'shipped' : ''}
       ]));
       cel.addEventListener('pointermove', posDica);
       cel.addEventListener('pointerleave', esconderDica);
@@ -801,7 +1017,7 @@ function colunas(host, dados, opc) {
   const banda = pw/dados.length, larg = Math.min(24, banda*0.55);
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
-  s.setAttribute('aria-label', opc.titulo || 'Colunas');
+  s.setAttribute('aria-label', opc.titulo || 'Columns');
 
   tk.forEach(v => {
     const y = m.t+ph-(v/topo)*ph;
@@ -823,8 +1039,8 @@ function colunas(host, dados, opc) {
 
     const alvo = sv('rect', {x:cx-banda/2, y:m.t, width:banda, height:ph, class:'alvo'});
     alvo.addEventListener('pointerenter', ev => mostrarDica(ev, d.rotuloLongo || d.rotulo, [
-      {cor:'var(--serie-1)', valor: fmtT(d.valor), nome:'na fila'},
-      d.n != null ? {valor: fmtN(d.n), nome:'navios'} : null
+      {cor:'var(--serie-1)', valor: fmtT(d.valor), nome:'queued'},
+      d.n != null ? {valor: fmtN(d.n), nome:'vessels'} : null
     ].filter(Boolean)));
     alvo.addEventListener('pointermove', posDica);
     alvo.addEventListener('pointerleave', esconderDica);
@@ -856,7 +1072,10 @@ const S = DADOS.sailed;
 // mes = '__TODOS__' ou 1..12. Filtra o mes DO ANO (todo marco de 2018 a 2026),
 // nao um recorte de calendario — e o corte que responde perguntas de
 // sazonalidade, que e o assunto desta pagina.
-const estadoH = {anoIni:null, anoFim:null, mes:'__TODOS__', carga:'__TODAS__'};
+//
+// cargas e um Set de indices; vazio significa TODAS.
+const estadoH = {anoIni:null, anoFim:null, mes:'__TODOS__', cargas:new Set()};
+let msCargas = null;
 
 const CAT = ['var(--serie-1)','var(--serie-2)','var(--serie-3)','var(--serie-4)','var(--serie-5)','var(--serie-6)'];
 
@@ -875,12 +1094,15 @@ function iniciarFiltrosHist() {
   selIni.value = estadoH.anoIni; selFim.value = estadoH.anoFim;
 
   const selM = document.getElementById('f-mes');
-  selM.appendChild(new Option('Todos os meses', '__TODOS__'));
+  selM.appendChild(new Option('All months', '__TODOS__'));
   MESES.forEach((nome, i) => selM.appendChild(new Option(NOME_MES[i], String(i + 1))));
 
-  const selC = document.getElementById('f-carga');
-  selC.appendChild(new Option('Todas as cargas', '__TODAS__'));
-  (S.dims.cargas || []).forEach((c,i) => selC.appendChild(new Option(c, String(i))));
+  msCargas = criarMultiSelect(document.getElementById('f-carga'), {
+    rotulo: 'Cargo',
+    plural: 'cargoes',
+    opcoes: (S.dims.cargas || []).map((c, i) => ({valor: i, nome: c})),
+    onChange: (sel) => { estadoH.cargas = sel; renderHist(); },
+  });
 
   selIni.addEventListener('change', () => {
     estadoH.anoIni = +selIni.value;
@@ -893,12 +1115,12 @@ function iniciarFiltrosHist() {
     renderHist();
   });
   selM.addEventListener('change', () => { estadoH.mes = selM.value; renderHist(); });
-  selC.addEventListener('change', () => { estadoH.carga = selC.value; renderHist(); });
   document.getElementById('f-limpar-hist').addEventListener('click', () => {
     estadoH.anoIni = anos[0]; estadoH.anoFim = anos[anos.length-1];
-    estadoH.mes = '__TODOS__'; estadoH.carga = '__TODAS__';
+    estadoH.mes = '__TODOS__'; estadoH.cargas = new Set();
     selIni.value = estadoH.anoIni; selFim.value = estadoH.anoFim;
-    selM.value = '__TODOS__'; selC.value = '__TODAS__';
+    selM.value = '__TODOS__';
+    msCargas.limpar();
     renderHist();
   });
 }
@@ -908,12 +1130,22 @@ function iniciarFiltrosHist() {
  *
  * As duas tabelas-fato tem o mesmo prefixo de chaves (ano, mes, carga), entao a
  * mesma funcao serve as duas e os graficos nao podem divergir de recorte.
+ *
+ * Conjunto de cargas vazio = todas, por isso o teste de size vem antes.
  */
 function passaH(ano, mes, iCarga) {
   if (ano < estadoH.anoIni || ano > estadoH.anoFim) return false;
   if (estadoH.mes !== '__TODOS__' && mes !== +estadoH.mes) return false;
-  if (estadoH.carga !== '__TODAS__' && iCarga !== +estadoH.carga) return false;
+  if (estadoH.cargas.size && !estadoH.cargas.has(iCarga)) return false;
   return true;
+}
+
+/** Descreve um conjunto sem estourar a ficha: 'CORN, WHEAT +2'. */
+function resumirSelecao(sel, nomes, rotuloTodos) {
+  if (!sel.size) return rotuloTodos;
+  const lista = [...sel].map(v => nomes[v] ?? String(v));
+  return lista.length <= 2 ? lista.join(', ')
+                           : `${lista.slice(0,2).join(', ')} +${lista.length - 2}`;
 }
 
 /**
@@ -933,17 +1165,17 @@ function renderAviso() {
   caixa.appendChild(el('div','icone','⚠'));
   const corpo = el('div');
   corpo.appendChild(el('h3', null,
-    `${anomalias.length} embarque(s) com tonelagem impossível, fora dos gráficos`));
+    `${anomalias.length} shipment(s) with impossible tonnage, excluded from the charts`));
   corpo.appendChild(el('p', null,
-    `Acima do limite de ${fmtT(S.limiteTonelagem)} por navio — o maior graneleiro em ` +
-    `operação carrega cerca de 400 kt. Somam ${fmtT(soma)} e achatavam a escala de ` +
-    `todos os gráficos. Corrija na origem (NABSA) ou na base.`));
+    `Above the ${fmtT(S.limiteTonelagem)} per-vessel limit — the largest bulk carrier in ` +
+    `service loads about 400 kt. They add up to ${fmtT(soma)} and were flattening the scale of ` +
+    `every chart. Fix at the source (NABSA) or in the base file.`));
   const lista = el('ul');
   anomalias.slice(0,5).forEach(a => {
     const li = el('li');
     li.appendChild(el('b', null, fmtT(a.tons)));
     li.appendChild(document.createTextNode(
-      ` — ${a.navio || 'navio não informado'}, ${fmtData(a.data)}` +
+      ` — ${a.navio || 'vessel not reported'}, ${fmtData(a.data)}` +
       `${a.carga ? ', ' + a.carga : ''}${a.destino ? ' → ' + a.destino : ''}`));
     lista.appendChild(li);
   });
@@ -994,30 +1226,30 @@ function renderHist() {
      Nada de "destinos ativos" a partir de porDestino.size: ali so existem os
      15 mantidos mais o balde. As contagens reais vem do Python, ja calculadas
      sobre a base inteira — e por isso so valem sem filtro. */
-  const semFiltro = estadoH.carga === '__TODAS__' && estadoH.mes === '__TODOS__'
+  const semFiltro = !estadoH.cargas.size && estadoH.mes === '__TODOS__'
     && estadoH.anoIni === S.anos[0] && estadoH.anoFim === S.anos[S.anos.length-1];
 
   // Descreve o recorte ativo em texto, para os KPIs nao mentirem sobre o que
   // estao somando.
   const recorte = [`${estadoH.anoIni}–${estadoH.anoFim}`];
   if (estadoH.mes !== '__TODOS__') recorte.push(NOME_MES[+estadoH.mes - 1]);
-  if (estadoH.carga !== '__TODAS__') recorte.push(dims.cargas[+estadoH.carga]);
+  if (estadoH.cargas.size) recorte.push(resumirSelecao(estadoH.cargas, dims.cargas, ''));
   const liderDestino = topo(porDestino, dims.destinos, 1)[0];
   let pico = null;
   porMes.forEach((v,k) => { if (!pico || v.t > pico.t) pico = {t:v.t, k}; });
 
   fichas(document.getElementById('kpis-hist'), [
-    {rotulo:'Total embarcado', valor: fmtT(totTons), heroi:true, nota: recorte.join(' · ')},
-    {rotulo:'Embarques', valor: fmtN(totN)},
-    {rotulo: estadoH.mes === '__TODOS__' ? 'Média mensal' : 'Média por ano',
+    {rotulo:'Total shipped', valor: fmtT(totTons), heroi:true, nota: recorte.join(' · ')},
+    {rotulo:'Sailings', valor: fmtN(totN)},
+    {rotulo: estadoH.mes === '__TODOS__' ? 'Monthly average' : 'Yearly average',
      valor: nMeses ? fmtT(totTons/nMeses) : '—',
-     nota: `${nMeses} ${estadoH.mes === '__TODOS__' ? 'meses' : 'ocorrências'} com registro`},
-    {rotulo:'Maior destino', valor: liderDestino ? fmtT(liderDestino.valor) : '—',
+     nota: `${nMeses} ${estadoH.mes === '__TODOS__' ? 'months' : 'occurrences'} on record`},
+    {rotulo:'Top destination', valor: liderDestino ? fmtT(liderDestino.valor) : '—',
      nota: liderDestino ? liderDestino.nome : ''},
-    {rotulo:'Pico mensal', valor: pico ? fmtT(pico.t) : '—',
+    {rotulo:'Peak month', valor: pico ? fmtT(pico.t) : '—',
      nota: pico ? `${MESES[(pico.k%100)-1]}/${Math.floor(pico.k/100)}` : ''},
-    {rotulo:'Destinos distintos', valor: semFiltro ? fmtN((S.totais||{}).destinos) : '—',
-     nota: semFiltro ? 'no período completo' : 'apenas sem filtro'}
+    {rotulo:'Distinct destinations', valor: semFiltro ? fmtN((S.totais||{}).destinos) : '—',
+     nota: semFiltro ? 'over the full period' : 'unfiltered only'}
   ]);
 
   /* --- Série mensal (o grafico largo, segunda varredura do F) --- */
@@ -1031,25 +1263,25 @@ function renderHist() {
   // ano a ano. O titulo tem que acompanhar, senao descreve outra coisa.
   const umMes = estadoH.mes !== '__TODOS__';
   const tituloSerie = umMes
-    ? `Volume embarcado em ${NOME_MES[+estadoH.mes - 1]}, ano a ano`
-    : 'Volume embarcado por mês';
+    ? `Volume shipped in ${NOME_MES[+estadoH.mes - 1]}, year over year`
+    : 'Volume shipped by month';
   const cSerie = cartao(document.getElementById('c-serie'), tituloSerie,
-    `${pontos.length} ${umMes ? 'anos' : 'meses'} · pico destacado no gráfico`);
+    `${pontos.length} ${umMes ? 'years' : 'months'} · peak labelled on the chart`);
   linhaTempo(cSerie.graf, pontos, {altura:210, titulo:tituloSerie});
-  tabela(cSerie.tab, [{rotulo:'Mês'},{rotulo:'Toneladas',num:true},{rotulo:'Embarques',num:true}],
+  tabela(cSerie.tab, [{rotulo:'Month'},{rotulo:'Tons',num:true},{rotulo:'Sailings',num:true}],
     pontos.map(p => [p.rotuloLongo, fmtT(p.valor), fmtN(p.n)]));
 
   /* --- Haste vertical do F: os tres rankings --- */
-  const cCargas = cartao(document.getElementById('c-cargas'), 'Cargas por volume', 'Top 8');
+  const cCargas = cartao(document.getElementById('c-cargas'), 'Cargoes by volume', 'Top 8');
   const dCargas = topo(porCarga, dims.cargas, 8);
-  barrasH(cCargas.graf, dCargas, {titulo:'Cargas por volume'});
-  tabela(cCargas.tab, [{rotulo:'Carga'},{rotulo:'Toneladas',num:true}],
+  barrasH(cCargas.graf, dCargas, {titulo:'Cargoes by volume'});
+  tabela(cCargas.tab, [{rotulo:'Cargo'},{rotulo:'Tons',num:true}],
     dCargas.map(d => [d.nome, fmtT(d.valor)]));
 
-  const cDest = cartao(document.getElementById('c-destinos'), 'Destinos por volume', 'Top 10');
+  const cDest = cartao(document.getElementById('c-destinos'), 'Destinations by volume', 'Top 10');
   const dDest = topo(porDestino, dims.destinos, 10);
-  barrasH(cDest.graf, dDest, {titulo:'Destinos por volume'});
-  tabela(cDest.tab, [{rotulo:'Destino'},{rotulo:'Toneladas',num:true}],
+  barrasH(cDest.graf, dDest, {titulo:'Destinations by volume'});
+  tabela(cDest.tab, [{rotulo:'Destination'},{rotulo:'Tons',num:true}],
     dDest.map(d => [d.nome, fmtT(d.valor)]));
 
   // fatoTerminal: [ano, mes, iCarga, iTerminal, tons, n]
@@ -1059,10 +1291,10 @@ function renderHist() {
     if (!passaH(ano, mes, ic)) return;
     porTerm.set(it, (porTerm.get(it)||0) + t);
   });
-  const cTerm = cartao(document.getElementById('c-terminais'), 'Terminais por volume', 'Top 10');
+  const cTerm = cartao(document.getElementById('c-terminais'), 'Terminals by volume', 'Top 10');
   const dTerm = topo(porTerm, dims.terminais, 10);
-  barrasH(cTerm.graf, dTerm, {titulo:'Terminais por volume'});
-  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Toneladas',num:true}],
+  barrasH(cTerm.graf, dTerm, {titulo:'Terminals by volume'});
+  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Tons',num:true}],
     dTerm.map(d => [d.nome, fmtT(d.valor)]));
 
   /* --- Mix de cargas por ano ---
@@ -1076,7 +1308,7 @@ function renderHist() {
   const principais = ranking.slice(0,5).map(([i]) => i);
   const temResto = ranking.length > 5 || porCarga.has(iResiduo);
   const series = principais.map((i,k) => ({chave:String(i), nome:dims.cargas[i], cor:CAT[k]}));
-  if (temResto) series.push({chave:'__x__', nome:'Demais cargas', cor:'var(--serie-x)'});
+  if (temResto) series.push({chave:'__x__', nome:'Other cargoes', cor:'var(--serie-x)'});
 
   const colsMix = anosNoFiltro.map(a => {
     const valores = {}; let total = 0;
@@ -1089,11 +1321,11 @@ function renderHist() {
     });
     return {nome:String(a), valores, total};
   });
-  const cMix = cartao(document.getElementById('c-mix'), 'Mix de cargas por ano',
-    'Cinco maiores cargas do período; o restante agrupado');
-  empilhadaV(cMix.graf, colsMix, series, {altura:235, titulo:'Mix de cargas por ano'});
+  const cMix = cartao(document.getElementById('c-mix'), 'Cargo mix by year',
+    'Five largest cargoes in the period; the rest grouped');
+  empilhadaV(cMix.graf, colsMix, series, {altura:235, titulo:'Cargo mix by year'});
   tabela(cMix.tab,
-    [{rotulo:'Ano'}].concat(series.map(s => ({rotulo:s.nome, num:true}))).concat([{rotulo:'Total',num:true}]),
+    [{rotulo:'Year'}].concat(series.map(s => ({rotulo:s.nome, num:true}))).concat([{rotulo:'Total',num:true}]),
     colsMix.map(c => [c.nome].concat(series.map(s => fmtT(c.valores[s.chave]||0))).concat([fmtT(c.total)])));
 
   /* --- Sazonalidade --- */
@@ -1103,13 +1335,13 @@ function renderHist() {
   // Sazonalidade compara meses entre si. Com um mes fixado sobra uma coluna
   // acesa e onze vazias — o cartao continua correto, mas perde o assunto, e o
   // subtitulo diz isso em vez de deixar o leitor achar que quebrou.
-  const cSaz = cartao(document.getElementById('c-sazon'), 'Sazonalidade — ano × mês',
+  const cSaz = cartao(document.getElementById('c-sazon'), 'Seasonality — year × month',
     umMes
-      ? `Filtrado em ${NOME_MES[+estadoH.mes - 1]} — limpe o filtro de mês para comparar os doze`
-      : 'Volume embarcado por mês; escala de 0 ao máximo logo abaixo');
-  heatmap(cSaz.graf, sazon, anosNoFiltro, {titulo:'Sazonalidade por ano e mês'});
+      ? `Filtered to ${NOME_MES[+estadoH.mes - 1]} — clear the month filter to compare all twelve`
+      : 'Volume shipped per month; scale from 0 to the maximum shown below');
+  heatmap(cSaz.graf, sazon, anosNoFiltro, {titulo:'Seasonality by year and month'});
   tabela(cSaz.tab,
-    [{rotulo:'Ano'}].concat(MESES.map(m => ({rotulo:m, num:true}))),
+    [{rotulo:'Year'}].concat(MESES.map(m => ({rotulo:m, num:true}))),
     anosNoFiltro.map(a => [String(a)].concat(MESES.map((_,mi) => {
       const v = (sazon[a]||{})[mi+1]; return v ? fmtT(v) : '—';
     }))));
@@ -1119,23 +1351,32 @@ function renderHist() {
    Página 1 — Operacional (Line-Up)
    =========================================================================== */
 const L = DADOS.lineup;
-const estadoO = {porto:'__TODOS__', status:'__TODOS__', commodity:'__TODAS__', busca:''};
+// Todos os conjuntos seguem a mesma convencao do Historico: vazio = todos.
+const estadoO = {portos:new Set(), statuses:new Set(), commodities:new Set(), busca:''};
+let msPortos = null, msStatus = null, msCommodities = null;
 
 // A ordem e a do processo: previsto -> aguardando berco -> carregando.
 const ORDEM_STATUS = ['EXPECTED','WAITING','LOADING','TBC'];
 const COR_STATUS = {EXPECTED:'var(--ord-1)', WAITING:'var(--ord-2)', LOADING:'var(--ord-3)', TBC:'var(--ord-0)'};
-const NOME_STATUS = {EXPECTED:'Previsto', WAITING:'Aguardando berço', LOADING:'Carregando', TBC:'A confirmar'};
+const NOME_STATUS = {EXPECTED:'Expected', WAITING:'Waiting for berth', LOADING:'Loading', TBC:'To be confirmed'};
 
 function iniciarFiltrosOp() {
   const portos = [...new Set((L.navios||[]).map(n => n.porto).filter(Boolean))].sort();
-  const selP = document.getElementById('f-porto');
-  selP.appendChild(new Option('Todos os portos','__TODOS__'));
-  portos.forEach(p => selP.appendChild(new Option(p, p)));
+  msPortos = criarMultiSelect(document.getElementById('f-porto'), {
+    rotulo: 'Port',
+    plural: 'ports',
+    opcoes: portos.map(p => ({valor: p, nome: p})),
+    onChange: (sel) => { estadoO.portos = sel; renderOp(); },
+  });
 
-  const selS = document.getElementById('f-status');
-  selS.appendChild(new Option('Todos os status','__TODOS__'));
-  ORDEM_STATUS.filter(s => (L.statuses||[]).includes(s))
-    .forEach(s => selS.appendChild(new Option(NOME_STATUS[s] || s, s)));
+  // Na ordem do processo, nao alfabetica: previsto -> aguardando -> carregando.
+  msStatus = criarMultiSelect(document.getElementById('f-status'), {
+    rotulo: 'Status',
+    plural: 'statuses',
+    opcoes: ORDEM_STATUS.filter(s => (L.statuses||[]).includes(s))
+                        .map(s => ({valor: s, nome: NOME_STATUS[s] || s})),
+    onChange: (sel) => { estadoO.statuses = sel; renderOp(); },
+  });
 
   // Ordenadas por tonelagem na fila, nao alfabeticamente: quem abre a lista
   // procura as cargas que pesam, e elas ficam no topo.
@@ -1144,21 +1385,21 @@ function iniciarFiltrosOp() {
     const k = n.commodity;
     if (k) porCommodity.set(k, (porCommodity.get(k)||0) + (n.tons||0));
   });
-  const selCo = document.getElementById('f-commodity');
-  selCo.appendChild(new Option('Todas as cargas','__TODAS__'));
-  [...porCommodity.entries()].sort((a,b)=>b[1]-a[1])
-    .forEach(([nome]) => selCo.appendChild(new Option(nome, nome)));
+  msCommodities = criarMultiSelect(document.getElementById('f-commodity'), {
+    rotulo: 'Commodity',
+    plural: 'commodities',
+    opcoes: [...porCommodity.entries()].sort((a,b)=>b[1]-a[1])
+                                       .map(([nome]) => ({valor: nome, nome})),
+    onChange: (sel) => { estadoO.commodities = sel; renderOp(); },
+  });
 
   const busca = document.getElementById('f-busca');
-  selP.addEventListener('change', () => { estadoO.porto = selP.value; renderOp(); });
-  selS.addEventListener('change', () => { estadoO.status = selS.value; renderOp(); });
-  selCo.addEventListener('change', () => { estadoO.commodity = selCo.value; renderOp(); });
   busca.addEventListener('input', () => { estadoO.busca = busca.value.trim().toLowerCase(); renderOp(); });
   document.getElementById('f-limpar-op').addEventListener('click', () => {
-    estadoO.porto='__TODOS__'; estadoO.status='__TODOS__';
-    estadoO.commodity='__TODAS__'; estadoO.busca='';
-    selP.value='__TODOS__'; selS.value='__TODOS__';
-    selCo.value='__TODAS__'; busca.value='';
+    estadoO.portos = new Set(); estadoO.statuses = new Set();
+    estadoO.commodities = new Set(); estadoO.busca = '';
+    msPortos.limpar(); msStatus.limpar(); msCommodities.limpar();
+    busca.value = '';
     renderOp();
   });
 }
@@ -1177,15 +1418,15 @@ function renderOp() {
     host.kpis.textContent = '';
     [host.portos, host.term, host.comm, host.hist, host.navios].forEach(h => {
       h.textContent = '';
-      h.appendChild(el('div','vazio','Line-Up indisponível — o dashboard foi gerado sem conexão com o SQL Server.'));
+      h.appendChild(el('div','vazio','Line-Up unavailable — the dashboard was generated without a SQL Server connection.'));
     });
     return;
   }
 
   const navios = (L.navios||[]).filter(n => {
-    if (estadoO.porto !== '__TODOS__' && n.porto !== estadoO.porto) return false;
-    if (estadoO.status !== '__TODOS__' && n.status !== estadoO.status) return false;
-    if (estadoO.commodity !== '__TODAS__' && n.commodity !== estadoO.commodity) return false;
+    if (estadoO.portos.size && !estadoO.portos.has(n.porto)) return false;
+    if (estadoO.statuses.size && !estadoO.statuses.has(n.status)) return false;
+    if (estadoO.commodities.size && !estadoO.commodities.has(n.commodity)) return false;
     if (estadoO.busca) {
       const alvo = [n.navio, n.terminal, n.commodity, n.destino, n.charterer]
         .filter(Boolean).join(' ').toLowerCase();
@@ -1200,11 +1441,11 @@ function renderOp() {
 
   /* --- KPIs --- */
   fichas(host.kpis, [
-    {rotulo:'Navios na fila', valor: fmtN(navios.length), heroi:true, nota:`Snapshot de ${fmtData(L.snapshot)}`},
-    {rotulo:'Tonelagem na fila', valor: fmtT(soma(navios))},
-    {rotulo:'Carregando', valor: fmtN(porStatus.LOADING.length), nota: fmtT(soma(porStatus.LOADING))},
-    {rotulo:'Aguardando berço', valor: fmtN(porStatus.WAITING.length), nota: fmtT(soma(porStatus.WAITING))},
-    {rotulo:'Previstos', valor: fmtN(porStatus.EXPECTED.length), nota: fmtT(soma(porStatus.EXPECTED))}
+    {rotulo:'Vessels in queue', valor: fmtN(navios.length), heroi:true, nota:`Snapshot of ${fmtData(L.snapshot)}`},
+    {rotulo:'Tonnage in queue', valor: fmtT(soma(navios))},
+    {rotulo:'Loading', valor: fmtN(porStatus.LOADING.length), nota: fmtT(soma(porStatus.LOADING))},
+    {rotulo:'Waiting for berth', valor: fmtN(porStatus.WAITING.length), nota: fmtT(soma(porStatus.WAITING))},
+    {rotulo:'Expected', valor: fmtN(porStatus.EXPECTED.length), nota: fmtT(soma(porStatus.EXPECTED))}
   ]);
 
   /* --- Fila por porto e status --- */
@@ -1222,12 +1463,12 @@ function renderOp() {
   });
   const linhasPortos = [...mapaPortos.values()].sort((a,b)=>b.total-a.total);
 
-  const cPortos = cartao(host.portos, 'Fila por porto e status',
-    'A cor escurece conforme o navio avança: previsto → aguardando → carregando');
-  empilhadaH(cPortos.graf, linhasPortos, seriesStatus, {titulo:'Fila por porto e status'});
+  const cPortos = cartao(host.portos, 'Queue by port and status',
+    'Colour darkens as the vessel advances: expected → waiting → loading');
+  empilhadaH(cPortos.graf, linhasPortos, seriesStatus, {titulo:'Queue by port and status'});
   tabela(cPortos.tab,
-    [{rotulo:'Porto'}].concat(seriesStatus.map(s=>({rotulo:s.nome,num:true})))
-      .concat([{rotulo:'Total',num:true},{rotulo:'Navios',num:true}]),
+    [{rotulo:'Port'}].concat(seriesStatus.map(s=>({rotulo:s.nome,num:true})))
+      .concat([{rotulo:'Total',num:true},{rotulo:'Vessels',num:true}]),
     linhasPortos.map(l => [l.nome]
       .concat(seriesStatus.map(s => fmtT(l.valores[s.chave]||0)))
       .concat([fmtT(l.total), fmtN(l.navios)])));
@@ -1245,15 +1486,15 @@ function renderOp() {
   };
 
   const dTerm = agrupar('terminal').slice(0,10);
-  const cTerm = cartao(host.term, 'Terminais com mais carga na fila', 'Top 10');
-  barrasH(cTerm.graf, dTerm.map(d => ({...d, extra: `${d.navios} navio(s)`})), {titulo:'Terminais na fila'});
-  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+  const cTerm = cartao(host.term, 'Terminals with most cargo queued', 'Top 10');
+  barrasH(cTerm.graf, dTerm.map(d => ({...d, extra: `${d.navios} vessel(s)`})), {titulo:'Terminals in queue'});
+  tabela(cTerm.tab, [{rotulo:'Terminal'},{rotulo:'Tons',num:true},{rotulo:'Vessels',num:true}],
     dTerm.map(d => [d.nome, fmtT(d.valor), fmtN(d.navios)]));
 
   const dComm = agrupar('commodity').slice(0,10);
-  const cComm = cartao(host.comm, 'Commodities na fila', 'Top 10');
-  barrasH(cComm.graf, dComm.map(d => ({...d, extra: `${d.navios} navio(s)`})), {titulo:'Commodities na fila'});
-  tabela(cComm.tab, [{rotulo:'Commodity'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+  const cComm = cartao(host.comm, 'Commodities in queue', 'Top 10');
+  barrasH(cComm.graf, dComm.map(d => ({...d, extra: `${d.navios} vessel(s)`})), {titulo:'Commodities in queue'});
+  tabela(cComm.tab, [{rotulo:'Commodity'},{rotulo:'Tons',num:true},{rotulo:'Vessels',num:true}],
     dComm.map(d => [d.nome, fmtT(d.valor), fmtN(d.navios)]));
 
   /* --- Histórico de snapshots ---
@@ -1267,9 +1508,9 @@ function renderOp() {
   const porData = new Map();
   (L.datasHistorico||[]).forEach(d => porData.set(d, {tons:0, navios:0}));
   (L.historico||[]).forEach(([data, porto, status, carga, tons, navios]) => {
-    if (estadoO.porto !== '__TODOS__' && porto !== estadoO.porto) return;
-    if (estadoO.status !== '__TODOS__' && status !== estadoO.status) return;
-    if (estadoO.commodity !== '__TODAS__' && carga !== estadoO.commodity) return;
+    if (estadoO.portos.size && !estadoO.portos.has(porto)) return;
+    if (estadoO.statuses.size && !estadoO.statuses.has(status)) return;
+    if (estadoO.commodities.size && !estadoO.commodities.has(carga)) return;
     const acc = porData.get(data) || {tons:0, navios:0};
     acc.tons += tons; acc.navios += navios;
     porData.set(data, acc);
@@ -1278,28 +1519,30 @@ function renderOp() {
   // agregado, sem os nomes. Fica dito no subtitulo em vez de silenciado.
   const hist = [...porData.entries()].sort((a,b) => a[0].localeCompare(b[0]));
 
-  const cHist = cartao(host.hist, 'Fila nos snapshots anteriores',
-    `${hist.length} snapshot(s) · datas não contíguas` +
-    (estadoO.busca ? ' · não reflete a busca por texto' : ''));
+  const cHist = cartao(host.hist, 'Queue in previous snapshots',
+    `${hist.length} snapshot(s) · dates are not contiguous` +
+    (estadoO.busca ? ' · does not reflect the text search' : ''));
   colunas(cHist.graf, hist.map(([data, v]) => ({
-    rotulo: fmtData(data).slice(0,5), rotuloLongo: fmtData(data),
+    // fmtDataCurta, e nao um slice do formato longo: 'Aug 14, 2026'.slice(0,5)
+    // devolveria 'Aug 1' e o eixo mentiria o dia.
+    rotulo: fmtDataCurta(data), rotuloLongo: fmtData(data),
     valor: v.tons, n: v.navios
-  })), {altura:165, titulo:'Fila nos snapshots anteriores'});
-  tabela(cHist.tab, [{rotulo:'Snapshot'},{rotulo:'Toneladas',num:true},{rotulo:'Navios',num:true}],
+  })), {altura:165, titulo:'Queue in previous snapshots'});
+  tabela(cHist.tab, [{rotulo:'Snapshot'},{rotulo:'Tons',num:true},{rotulo:'Vessels',num:true}],
     hist.map(([data, v]) => [fmtData(data), fmtT(v.tons), fmtN(v.navios)]));
 
   /* --- Tabela de navios --- */
   host.navios.textContent = '';
   const head = el('header');
-  head.appendChild(el('h2', null, 'Navios na fila'));
-  head.appendChild(el('span','sub', `${navios.length} de ${(L.navios||[]).length}`));
+  head.appendChild(el('h2', null, 'Vessels in queue'));
+  head.appendChild(el('span','sub', `${navios.length} of ${(L.navios||[]).length}`));
   host.navios.appendChild(head);
   const corpo = el('div');
   host.navios.appendChild(corpo);
   const ordenados = [...navios].sort((a,b) => (a.eta||'9999').localeCompare(b.eta||'9999'));
   tabela(corpo,
-    [{rotulo:'Navio'},{rotulo:'Porto'},{rotulo:'Terminal'},{rotulo:'Status'},
-     {rotulo:'Commodity'},{rotulo:'Destino'},{rotulo:'Tons',num:true},{rotulo:'ETA'},{rotulo:'ETB'},{rotulo:'ETF'}],
+    [{rotulo:'Vessel'},{rotulo:'Port'},{rotulo:'Terminal'},{rotulo:'Status'},
+     {rotulo:'Commodity'},{rotulo:'Destination'},{rotulo:'Tons',num:true},{rotulo:'ETA'},{rotulo:'ETB'},{rotulo:'ETF'}],
     ordenados.map(n => [
       n.navio||'—', n.porto||'—', n.terminal||'—', NOME_STATUS[n.status]||n.status,
       n.commodity||'—', n.destino||'—', fmtT(n.tons), fmtData(n.eta), fmtData(n.etb), fmtData(n.etf)
@@ -1325,12 +1568,12 @@ document.getElementById('aba-hist').addEventListener('click', () => abrirAba('hi
 (function iniciar() {
   const p = S.periodo || {};
   document.getElementById('meta-periodo').textContent =
-    `Sailed ${fmtData(p.inicio)} a ${fmtData(p.fim)} · ${fmtN((S.totais||{}).embarques)} embarques` +
-    (L.snapshot ? ` · Line-Up em ${fmtData(L.snapshot)}` : ' · Line-Up indisponível');
+    `Sailed ${fmtData(p.inicio)} to ${fmtData(p.fim)} · ${fmtN((S.totais||{}).embarques)} sailings` +
+    (L.snapshot ? ` · Line-Up as of ${fmtData(L.snapshot)}` : ' · Line-Up unavailable');
   document.getElementById('meta-gerado').textContent =
-    'Gerado em ' + fmtData((DADOS.geradoEm||'').slice(0,10)) + ' ' + (DADOS.geradoEm||'').slice(11,16);
+    'Generated ' + fmtData((DADOS.geradoEm||'').slice(0,10)) + ' ' + (DADOS.geradoEm||'').slice(11,16);
   document.getElementById('rodape').textContent =
-    'Fonte: NABSA — Sailed (planilha) e Line-Up (SQL Server). Arquivo autocontido, sem requisições externas.';
+    'Source: NABSA — Sailed (spreadsheet) and Line-Up (SQL Server). Self-contained file, no external requests.';
 
   iniciarFiltrosHist();
   iniciarFiltrosOp();

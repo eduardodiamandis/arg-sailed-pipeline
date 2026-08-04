@@ -327,3 +327,18 @@ def test_pagina_gerada_nao_faz_requisicao_externa():
     template = dashboard._TEMPLATE.read_text(encoding="utf-8")
     for proibido in ("src=\"http", "href=\"http", "@import", "fetch(", "XMLHttpRequest"):
         assert proibido not in template, proibido
+
+
+def test_payload_publica_o_rotulo_do_residuo(sailed_simples):
+    """
+    A pagina precisa saber qual rotulo e o balde de cauda longa para nao deixa-lo
+    disputar posicao nos rankings. Publicar no payload evita repetir a string no
+    template, onde as duas poderiam divergir sem ninguem notar.
+    """
+    out = dashboard.agregar_sailed(sailed_simples)
+    assert out["rotuloResiduo"] == dashboard.ROTULO_OUTROS
+
+
+def test_rotulo_do_residuo_acompanha_o_idioma_da_interface():
+    """A interface e em ingles; o rotulo aparece nela, entao segue o idioma."""
+    assert dashboard.ROTULO_OUTROS == "OTHER"
