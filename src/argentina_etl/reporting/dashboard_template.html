@@ -167,6 +167,43 @@ html, body { margin:0; padding:0; }
 .ms-item:focus-within { outline:2px solid var(--serie-1); outline-offset:-2px; }
 .ms-vazio { padding:8px 7px; font-size:12px; color:var(--tinta-3); }
 
+/* --- Guia de status -------------------------------------------------------
+   margin-left:auto empurra para a ponta direita da linha de filtros — o canto
+   superior direito do conteúdo da aba, e ao lado do filtro que ele explica.
+   -------------------------------------------------------------------------- */
+.ajuda { position:relative; margin-left:auto; align-self:center; }
+.ajuda-botao {
+  appearance:none; font:inherit; font-size:12px; cursor:pointer; color:var(--tinta-2);
+  background:none; border:1px solid var(--borda); border-radius:7px; padding:6px 11px;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+}
+.ajuda-botao:hover { background:var(--realce); }
+.ajuda-botao:focus-visible { outline:2px solid var(--serie-1); outline-offset:1px; }
+.ajuda-botao[aria-expanded="true"] { border-color:var(--serie-1); color:var(--tinta-1); }
+.ajuda-botao .marca {
+  width:15px; height:15px; border-radius:50%; flex:none;
+  border:1px solid currentColor; font-size:10px; font-weight:600;
+  display:inline-flex; align-items:center; justify-content:center; line-height:1;
+}
+
+.ajuda-painel {
+  position:absolute; z-index:45; top:calc(100% + 5px); right:0; width:330px;
+  background:var(--superficie); border:1px solid var(--borda); border-radius:10px;
+  box-shadow:0 6px 22px rgba(0,0,0,.16); padding:13px 15px; display:none;
+  text-align:left;
+}
+.ajuda-painel.on { display:block; }
+.ajuda-painel h3 { margin:0 0 3px; font-size:12.5px; font-weight:600; color:var(--tinta-1); }
+.ajuda-painel .intro { margin:0 0 10px; font-size:11.5px; color:var(--tinta-3); line-height:1.45; }
+.ajuda-linha { display:flex; gap:9px; margin-top:9px; }
+.ajuda-linha .chave { margin-top:3px; }
+.ajuda-linha b { display:block; font-size:12px; color:var(--tinta-1); font-weight:600; }
+.ajuda-linha span { font-size:11.5px; color:var(--tinta-2); line-height:1.45; }
+.ajuda-nota {
+  margin-top:11px; padding-top:9px; border-top:1px solid var(--grade);
+  font-size:11.5px; color:var(--tinta-2); line-height:1.45;
+}
+
 /* --- Layout F -----------------------------------------------------------
    Barra de KPIs no topo (primeira varredura), grafico largo abaixo (segunda
    varredura), e a haste vertical a esquerda com os rankings.
@@ -243,21 +280,6 @@ svg { display:block; width:100%; overflow:visible; }
 #dica .li b { color:var(--tinta-1); font-variant-numeric:tabular-nums; }
 #dica .li i { font-style:normal; color:var(--tinta-2); }
 
-/* Aviso de qualidade de dado. Cor de status nunca aparece sozinha — vem sempre
-   com icone e texto, porque a matiz por si so nao carrega significado. */
-.aviso {
-  display:flex; gap:11px; align-items:flex-start;
-  background:var(--superficie); border:1px solid var(--borda);
-  border-left:3px solid #ec835a; border-radius:11px;
-  padding:13px 16px; margin:12px 0 0;
-}
-.aviso .icone { font-size:15px; line-height:1.3; flex:none; }
-.aviso h3 { margin:0 0 3px; font-size:12.5px; font-weight:600; color:var(--tinta-1); }
-.aviso p  { margin:0; font-size:12px; color:var(--tinta-2); }
-.aviso ul { margin:6px 0 0; padding-left:17px; font-size:12px; color:var(--tinta-2); }
-.aviso li { margin-top:2px; }
-.aviso b  { color:var(--tinta-1); font-variant-numeric:tabular-nums; }
-
 .vazio { color:var(--tinta-3); font-size:12.5px; padding:22px 0; text-align:center; }
 .oculto { display:none !important; }
 .rodape { padding:0 24px 26px; font-size:11px; color:var(--tinta-3); }
@@ -290,6 +312,7 @@ svg { display:block; width:100%; overflow:visible; }
         <input type="text" id="f-busca" placeholder="e.g. RENOVA" autocomplete="off">
       </div>
       <button class="limpar" id="f-limpar-op">Clear</button>
+      <div class="ajuda" id="guia-status"></div>
     </div>
 
     <div class="kpis" id="kpis-op"></div>
@@ -328,8 +351,6 @@ svg { display:block; width:100%; overflow:visible; }
       <div class="campo" id="f-carga"></div>
       <button class="limpar" id="f-limpar-hist">Clear</button>
     </div>
-
-    <div id="aviso-anomalia"></div>
 
     <div class="kpis" id="kpis-hist"></div>
 
@@ -894,13 +915,17 @@ function empilhadaV(host, colunas, series, opc) {
   if (!colunas.length) { vazio(host); return; }
 
   const W = larguraDe(host, 560), H = opc.altura || 235;
-  const m = {t:12, r:12, b:26, l:56};
+  // t maior que o padrao para caber o total sobre a tampa da coluna.
+  const m = {t:22, r:12, b:26, l:56};
   const pw = Math.max(30, W-m.l-m.r), ph = H-m.t-m.b;
   const max = Math.max(...colunas.map(c => c.total)) || 1;
   const tk = ticks(max, 4), topo = tk[tk.length-1] || max;
   const banda = pw / colunas.length;
   const larg = Math.min(24, banda*0.6);
   const VAO = 2;
+  // O total so e rotulado se houver folga horizontal para o texto nao encostar
+  // no vizinho. '150.0 Mt' a 11px ocupa ~46px.
+  const cabeTotal = banda >= 50;
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
   s.setAttribute('aria-label', opc.titulo || 'Stacked columns');
@@ -933,6 +958,16 @@ function empilhadaV(host, colunas, series, opc) {
       s.appendChild(seg);
       y -= VAO;
     });
+    // Total na tampa, e nao um numero por segmento: a coluna tem 24px de largura
+    // e o texto ~46px, entao rotulo dentro do segmento vazaria por cima do
+    // vizinho — e metade dos segmentos tem menos de 14px de altura. O valor de
+    // cada fatia continua na dica e na tabela.
+    if (cabeTotal && c.total > 0) {
+      const tt = sv('text', {x:cx, y:Math.max(10, y - 6), 'text-anchor':'middle', class:'rotulo-val'});
+      tt.textContent = fmtT(c.total);
+      s.appendChild(tt);
+    }
+
     const t = sv('text', {x:cx, y:H-7, 'text-anchor':'middle', class:'rotulo-eixo'});
     t.textContent = c.nome;
     s.appendChild(t);
@@ -1010,11 +1045,14 @@ function colunas(host, dados, opc) {
   if (!dados.length) { vazio(host); return; }
 
   const W = larguraDe(host, 560), H = opc.altura || 165;
-  const m = {t:12, r:12, b:26, l:56};
+  // t maior que o padrao para caber o valor sobre a tampa da coluna.
+  const m = {t:22, r:12, b:26, l:56};
   const pw = Math.max(30, W-m.l-m.r), ph = H-m.t-m.b;
   const max = Math.max(...dados.map(d => d.valor)) || 1;
   const tk = ticks(max, 3), topo = tk[tk.length-1] || max;
   const banda = pw/dados.length, larg = Math.min(24, banda*0.55);
+  // Mesma regra do mix: so rotula se o texto nao for encostar no vizinho.
+  const cabeValor = banda >= 46;
 
   const s = sv('svg', {viewBox:`0 0 ${W} ${H}`, height:H, role:'img'});
   s.setAttribute('aria-label', opc.titulo || 'Columns');
@@ -1036,6 +1074,12 @@ function colunas(host, dados, opc) {
       `M${cx-larg/2},${m.t+ph} V${y+r} a${r},${r} 0 0 1 ${r},-${r} H${cx+larg/2-r} a${r},${r} 0 0 1 ${r},${r} V${m.t+ph} Z`});
     cam.style.fill = 'var(--serie-1)';
     s.appendChild(cam);
+
+    if (cabeValor) {
+      const tv = sv('text', {x:cx, y:Math.max(10, y - 6), 'text-anchor':'middle', class:'rotulo-val'});
+      tv.textContent = fmtT(d.valor);
+      s.appendChild(tv);
+    }
 
     const alvo = sv('rect', {x:cx-banda/2, y:m.t, width:banda, height:ph, class:'alvo'});
     alvo.addEventListener('pointerenter', ev => mostrarDica(ev, d.rotuloLongo || d.rotulo, [
@@ -1149,44 +1193,21 @@ function resumirSelecao(sel, nomes, rotuloTodos) {
 }
 
 /**
- * Aviso das tonelagens impossiveis retiradas das agregacoes.
- * Fica no topo da pagina, nomeando navio, data e tonelagem: o dado nao some,
- * ele muda de lugar — do grafico, onde achatava a escala, para um aviso que diz
- * exatamente o que foi encontrado.
+ * O aviso de tonelagem impossivel foi retirado da tela por decisao do operador.
+ *
+ * A **deteccao continua inteira** — nada foi afrouxado:
+ *   - config/correcoes_sailed.csv corrige o caso conhecido a cada rodada;
+ *   - validar_tonelagem() reporta qualquer caso novo no log e no e-mail;
+ *   - agregar_sailed() segue tirando essas linhas das agregacoes, para uma
+ *     linha absurda nao achatar a escala de todos os graficos.
+ *
+ * O que mudou e so o canal: um caso novo chega pelo e-mail da rodada, e nao
+ * mais por um banner no topo da pagina. `S.anomalias` continua no payload, entao
+ * reativar e recolocar a chamada em renderHist().
  */
-function renderAviso() {
-  const host = document.getElementById('aviso-anomalia');
-  host.textContent = '';
-  const anomalias = S.anomalias || [];
-  if (!anomalias.length) return;
-
-  const soma = anomalias.reduce((s,a) => s + (a.tons||0), 0);
-  const caixa = el('div','aviso');
-  caixa.appendChild(el('div','icone','⚠'));
-  const corpo = el('div');
-  corpo.appendChild(el('h3', null,
-    `${anomalias.length} shipment(s) with impossible tonnage, excluded from the charts`));
-  corpo.appendChild(el('p', null,
-    `Above the ${fmtT(S.limiteTonelagem)} per-vessel limit — the largest bulk carrier in ` +
-    `service loads about 400 kt. They add up to ${fmtT(soma)} and were flattening the scale of ` +
-    `every chart. Fix at the source (NABSA) or in the base file.`));
-  const lista = el('ul');
-  anomalias.slice(0,5).forEach(a => {
-    const li = el('li');
-    li.appendChild(el('b', null, fmtT(a.tons)));
-    li.appendChild(document.createTextNode(
-      ` — ${a.navio || 'vessel not reported'}, ${fmtData(a.data)}` +
-      `${a.carga ? ', ' + a.carga : ''}${a.destino ? ' → ' + a.destino : ''}`));
-    lista.appendChild(li);
-  });
-  corpo.appendChild(lista);
-  caixa.appendChild(corpo);
-  host.appendChild(caixa);
-}
 
 function renderHist() {
   const dims = S.dims;
-  renderAviso();
   // fatoMes: [ano, mes, iCarga, iDestino, tons, n]
   const porMes = new Map(), porDestino = new Map(), porCarga = new Map();
   const porAnoCarga = new Map(), sazon = {};
@@ -1358,7 +1379,83 @@ let msPortos = null, msStatus = null, msCommodities = null;
 // A ordem e a do processo: previsto -> aguardando berco -> carregando.
 const ORDEM_STATUS = ['EXPECTED','WAITING','LOADING','TBC'];
 const COR_STATUS = {EXPECTED:'var(--ord-1)', WAITING:'var(--ord-2)', LOADING:'var(--ord-3)', TBC:'var(--ord-0)'};
-const NOME_STATUS = {EXPECTED:'Expected', WAITING:'Waiting for berth', LOADING:'Loading', TBC:'To be confirmed'};
+const NOME_STATUS = {EXPECTED:'Expected', WAITING:'Waiting for berth', LOADING:'Loading', TBC:'Unknown'};
+
+// O que cada classe significa. Elas NAO vem do NABSA: sao derivadas em
+// pipelines/lineup.py comparando ETA/ETB/ETF com a data de hoje, e o guia
+// existe porque nada na tela revelaria essa regra sozinho.
+const EXPLICA_STATUS = {
+  EXPECTED: 'ETA is in the future — the vessel is still on its way.',
+  WAITING:  'ETA has passed but ETB has not — at anchorage, waiting for a berth.',
+  LOADING:  'ETB has passed but ETF has not — berthed and loading right now.',
+  TBC:      'No readable date in the bulletin — a slot is booked but the schedule is not confirmed.',
+};
+
+/**
+ * Guia das classes de status.
+ *
+ * As classes nao vem do NABSA: sao derivadas comparando ETA/ETB/ETF com a data
+ * de hoje. Sem o guia, o leitor nao tem como saber disso nem por que a mesma
+ * embarcacao muda de classe de um dia para o outro sem o arquivo mudar.
+ *
+ * Cada linha traz a chave de cor ao lado do nome, entao o guia tambem faz o
+ * papel de legenda: liga o tom da rampa ao estagio que ele representa.
+ */
+function montarGuiaStatus() {
+  const host = document.getElementById('guia-status');
+  if (!host) return;
+  host.textContent = '';
+
+  const id = 'guia-status-painel';
+  const botao = el('button', 'ajuda-botao');
+  botao.type = 'button';
+  botao.setAttribute('aria-expanded', 'false');
+  botao.setAttribute('aria-controls', id);
+  botao.appendChild(el('span', 'marca', 'i'));
+  botao.appendChild(el('span', null, 'Status guide'));
+  host.appendChild(botao);
+
+  const painel = el('div', 'ajuda-painel');
+  painel.id = id;
+  painel.appendChild(el('h3', null, 'How the statuses are derived'));
+  painel.appendChild(el('p', 'intro',
+    'The bulletin does not publish a status. Each vessel is classified here by ' +
+    'comparing its ETA, ETB and ETF against today — so the colour darkens as the ' +
+    'vessel advances through the port.'));
+
+  ORDEM_STATUS.forEach(s => {
+    const linha = el('div', 'ajuda-linha');
+    const chave = el('span', 'chave');
+    chave.style.background = COR_STATUS[s];
+    linha.appendChild(chave);
+    const txt = el('div');
+    txt.appendChild(el('b', null, NOME_STATUS[s] || s));
+    txt.appendChild(el('span', null, EXPLICA_STATUS[s] || ''));
+    linha.appendChild(txt);
+    painel.appendChild(linha);
+  });
+
+  painel.appendChild(el('div', 'ajuda-nota',
+    'Vessels that have already sailed are not shown here — they leave the Line-Up ' +
+    'and become Sailed data, so counting them twice is avoided. A vessel can also ' +
+    'change status from one day to the next without the bulletin changing, because ' +
+    'the comparison is against the current date.'));
+  host.appendChild(painel);
+
+  function abrir(sim) {
+    painel.classList.toggle('on', sim);
+    botao.setAttribute('aria-expanded', String(sim));
+  }
+  botao.addEventListener('click', ev => {
+    ev.stopPropagation();
+    abrir(!painel.classList.contains('on'));
+  });
+  painel.addEventListener('click', ev => ev.stopPropagation());
+  document.addEventListener('click', () => abrir(false));
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && painel.classList.contains('on')) { abrir(false); botao.focus(); }
+  });
+}
 
 function iniciarFiltrosOp() {
   const portos = [...new Set((L.navios||[]).map(n => n.porto).filter(Boolean))].sort();
@@ -1577,6 +1674,7 @@ document.getElementById('aba-hist').addEventListener('click', () => abrirAba('hi
 
   iniciarFiltrosHist();
   iniciarFiltrosOp();
+  montarGuiaStatus();
   renderHist();
   renderOp();
 })();
